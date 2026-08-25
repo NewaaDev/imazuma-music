@@ -1,0 +1,9 @@
+packages:
+  - .
+allowBuilds:
+  electron: true
+  esbuild: true
+  workerd: true
+onlyBuiltDependencies:
+  - electron
+  - esbuild

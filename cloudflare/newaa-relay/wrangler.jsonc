@@ -1,0 +1,19 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "newaa-music-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-21",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "MUSIC_ROOM", "class_name": "MusicRoom" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["MusicRoom"] }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  }
+}

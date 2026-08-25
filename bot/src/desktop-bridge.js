@@ -1,0 +1,151 @@
+import { AudioPlayerStatus } from '@discordjs/voice';
+import { WebSocketServer, WebSocket } from 'ws';
+import { config } from './config.js';
+
+function durationLabel(value) {
+  if (typeof value === 'string') return value;
+  const seconds = Math.max(0, Number(value) || 0);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return `${h ? `${h}:` : ''}${h ? String(m).padStart(2, '0') : m}:${String(s).padStart(2, '0')}`;
+}
+
+function durationSeconds(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return 0;
+  const parts = value.split(':').map(Number);
+  if (parts.some(Number.isNaN)) return 0;
+  return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+function desktopTrack(track) {
+  if (!track) return null;
+  return { id: track.id, title: track.title, channel: track.channel || 'YouTube', thumbnail: track.thumbnail || '', duration: durationLabel(track.duration), requestedBy: track.requestedBy || 'Desktop' };
+}
+
+function botTrack(track) {
+  if (!track?.id) throw new Error('Vidéo YouTube invalide.');
+  return {
+    id: track.id,
+    title: track.title || 'Vidéo YouTube',
+    channel: track.channel || 'YouTube',
+    thumbnail: track.thumbnail || null,
+    duration: durationSeconds(track.duration),
+    requestedBy: 'NEWAA Desktop',
+    url: `https://www.youtube.com/watch?v=${track.id}`,
+  };
+}
+
+export function createDesktopBridge(client, music) {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: config.desktopPort });
+  const authenticated = new WeakSet();
+  let selectedGuildId = config.guildId && client.guilds.cache.has(config.guildId) ? config.guildId : client.guilds.cache.firstKey();
+  let lastContext = {};
+
+  function guild() {
+    return client.guilds.cache.get(selectedGuildId) || client.guilds.cache.first() || null;
+  }
+
+  async function voiceChannel(targetGuild, context = {}) {
+    const userId = String(context.discordUserId || '').trim();
+    if (userId) {
+      const member = await targetGuild.members.fetch(userId).catch(() => null);
+      if (!member) throw new Error('Ton compte Discord n’est pas présent sur le serveur sélectionné.');
+      if (member.voice?.channel) return member.voice.channel;
+      throw new Error('Tu dois rejoindre un salon vocal sur Discord avant de lancer une musique.');
+    }
+    throw new Error('Configure ton identifiant Discord dans les paramètres de l’application.');
+  }
+
+  function textChannel(targetGuild, context = {}) {
+    const preferredId = String(context.preferredTextChannelId || config.defaultTextChannelId || '');
+    const preferred = preferredId ? targetGuild.channels.cache.get(preferredId) : null;
+    if (preferred?.isTextBased?.() && preferred?.isSendable?.()) return preferred;
+    return music.getLastTextChannel(targetGuild.id) || targetGuild.systemChannel || targetGuild.channels.cache.find((channel) => channel.isTextBased?.() && channel.isSendable?.()) || null;
+  }
+
+  function state() {
+    const targetGuild = guild();
+    const player = targetGuild ? music.get(targetGuild.id) : null;
+    const channelId = player?.connection?.joinConfig?.channelId;
+    const channel = channelId ? targetGuild.channels.cache.get(channelId) : null;
+    const elapsed = Math.floor((player?.seekOffset || 0) + (player?.player?.state?.resource?.playbackDuration || 0) / 1000);
+    const total = durationSeconds(player?.current?.duration);
+    return {
+      botOnline: client.isReady(), guildId: targetGuild?.id || '', guildName: targetGuild?.name || 'Aucun serveur',
+      guilds: client.guilds.cache.map((item) => ({ id: item.id, name: item.name, icon: item.iconURL({ extension: 'png', size: 64 }) || '' })),
+      textChannels: targetGuild?.channels.cache.filter((item) => item.isTextBased?.() && item.isSendable?.() && !item.isThread?.()).map((item) => ({ id: item.id, name: item.name })) || [],
+      voiceChannel: channel?.name || 'Aucun salon',
+      playing: player?.player?.state?.status === AudioPlayerStatus.Playing, volume: player?.volume ?? config.defaultVolume,
+      position: total > 0 ? Math.min(100, (elapsed / total) * 100) : 0, elapsed,
+      current: desktopTrack(player?.current), queue: (player?.queue || []).map(desktopTrack), history: [],
+    };
+  }
+
+  function send(socket, message) { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
+  function broadcast() { const message = JSON.stringify({ type: 'state', payload: state() }); for (const socket of server.clients) if (socket.readyState === WebSocket.OPEN && authenticated.has(socket)) socket.send(message); }
+
+  async function connectedPlayer(context) {
+    const targetGuild = guild();
+    if (!targetGuild) throw new Error('Le bot ne se trouve sur aucun serveur Discord.');
+    const channel = await voiceChannel(targetGuild, context);
+    if (!channel) throw new Error('Tu dois rejoindre un salon vocal sur Discord.');
+    if (!channel.joinable || !channel.speakable) throw new Error('Le bot n’a pas la permission de rejoindre/parler dans ce salon.');
+    const player = music.getOrCreate(targetGuild.id);
+    await player.connect(channel, textChannel(targetGuild, context));
+    return player;
+  }
+
+  async function command(action, payload, context = {}) {
+    lastContext = context;
+    const preferredGuildId = String(context.preferredGuildId || '');
+    if (preferredGuildId) {
+      if (!client.guilds.cache.has(preferredGuildId)) throw new Error('Le bot n’est pas présent sur ton serveur préféré.');
+      selectedGuildId = preferredGuildId;
+    }
+    if (action === 'select_guild') {
+      if (!client.guilds.cache.has(String(payload))) throw new Error('Ce serveur est inaccessible au bot.');
+      selectedGuildId = String(payload);
+      return;
+    }
+    const targetGuild = guild();
+    let player = targetGuild ? music.get(targetGuild.id) : null;
+    if (action === 'get_state') return;
+    if (['play_now', 'play_next', 'enqueue'].includes(action)) player = await connectedPlayer(context);
+    if (!player && !['volume'].includes(action)) throw new Error('Aucun lecteur actif.');
+    if (action === 'play_now') { player.stopping = false; player.queue = []; player.skip(); player.enqueue(botTrack(payload)); }
+    else if (action === 'play_next') { const track = botTrack(payload); if (player.current) player.queue.unshift(track); else player.enqueue(track); }
+    else if (action === 'enqueue') player.enqueue(botTrack(payload));
+    else if (action === 'toggle_pause') player.player.state.status === AudioPlayerStatus.Paused ? player.resume() : player.pause();
+    else if (action === 'skip') player.skip();
+    else if (action === 'stop') player.stop();
+    else if (action === 'volume') { if (!player) player = await connectedPlayer(context); player.setVolume(Math.max(0, Math.min(100, Number(payload)))); }
+    else if (action === 'seek') player.seek(Number(payload));
+    else if (action === 'remove_queue') player.queue.splice(Number(payload), 1);
+    else if (action === 'clear_queue') player.queue = [];
+    else if (action === 'reorder_queue') player.queue = (payload || []).map(botTrack);
+  }
+
+  server.on('connection', (socket) => {
+    socket.on('message', async (raw) => {
+      try {
+        const message = JSON.parse(String(raw));
+        if (message.type === 'auth') {
+          if (config.desktopToken && message.token !== config.desktopToken) return socket.close(4001, 'Authentification refusée');
+          authenticated.add(socket); send(socket, { type: 'state', payload: state() }); return;
+        }
+        if (!authenticated.has(socket) || message.type !== 'command') return;
+        await command(message.action, message.payload, message.context || lastContext);
+        send(socket, { type: 'event', event: 'command_result', payload: { requestId: message.requestId, ok: true } });
+        setTimeout(broadcast, 250);
+      } catch (error) {
+        send(socket, { type: 'event', event: 'command_result', payload: { ok: false, message: error.message } });
+        console.error('[Desktop]', error.message);
+      }
+    });
+  });
+  const timer = setInterval(broadcast, 2_000);
+  server.on('listening', () => console.log(`Passerelle NEWAA Desktop : ws://127.0.0.1:${config.desktopPort}`));
+  return { close: () => { clearInterval(timer); server.close(); } };
+}

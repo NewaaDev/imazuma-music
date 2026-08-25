@@ -1,0 +1,11 @@
+.timeline .seekbar {
+  flex: 1;
+  height: 4px;
+  accent-color: #a545f1;
+  cursor: pointer;
+}
+
+.timeline .seekbar:disabled {
+  cursor: default;
+  opacity: .45;
+}

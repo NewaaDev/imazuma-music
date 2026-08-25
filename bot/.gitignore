@@ -1,0 +1,6 @@
+node_modules/
+.env
+bot-token.dat
+npm-debug.log*
+.DS_Store
+cookies.txt
