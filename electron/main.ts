@@ -39,7 +39,12 @@ function reveal(value: unknown) {
   try { const b = Buffer.from(value, 'base64'); return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(b) : b.toString(); } catch { return ''; }
 }
 function getConfig(): Config {
-  const store = readStore();
+  let store = readStore();
+  if (remote.apiToken && !store.apiToken) {
+    const currentPublic = store.public as Partial<Config> || {};
+    store = { ...store, public: { ...currentPublic, wsUrl: remote.wsUrl || currentPublic.wsUrl }, apiToken: protect(remote.apiToken) };
+    writeStore(store);
+  }
   const saved = store.public as Partial<Config> || {};
   const permanent = Boolean(remote.wsUrl && remote.apiToken);
   return {
