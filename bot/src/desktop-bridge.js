@@ -40,6 +40,7 @@ function botTrack(track) {
 export function createDesktopBridge(client, music) {
   const server = new WebSocketServer({ host: '127.0.0.1', port: config.desktopPort });
   const authenticated = new WeakSet();
+  const contexts = new WeakMap();
   let selectedGuildId = config.guildId && client.guilds.cache.has(config.guildId) ? config.guildId : client.guilds.cache.firstKey();
   let lastContext = {};
 
@@ -65,15 +66,18 @@ export function createDesktopBridge(client, music) {
     return music.getLastTextChannel(targetGuild.id) || targetGuild.systemChannel || targetGuild.channels.cache.find((channel) => channel.isTextBased?.() && channel.isSendable?.()) || null;
   }
 
-  function state() {
+  function state(context = {}) {
     const targetGuild = guild();
+    const userId = String(context.discordUserId || '').trim();
+    const member = userId ? targetGuild?.members.cache.get(userId) : null;
+    const user = member?.user || (userId ? client.users.cache.get(userId) : null);
     const player = targetGuild ? music.get(targetGuild.id) : null;
     const channelId = player?.connection?.joinConfig?.channelId;
     const channel = channelId ? targetGuild.channels.cache.get(channelId) : null;
     const elapsed = Math.floor((player?.seekOffset || 0) + (player?.player?.state?.resource?.playbackDuration || 0) / 1000);
     const total = durationSeconds(player?.current?.duration);
     return {
-      botOnline: client.isReady(), guildId: targetGuild?.id || '', guildName: targetGuild?.name || 'Aucun serveur',
+      botOnline: client.isReady(), discordClientId: client.application?.id || client.user?.id || '', userName: member?.displayName || user?.globalName || user?.username || '', userAvatar: user?.displayAvatarURL({ extension: 'png', size: 128 }) || '', guildId: targetGuild?.id || '', guildName: targetGuild?.name || 'Aucun serveur',
       guilds: client.guilds.cache.map((item) => ({ id: item.id, name: item.name, icon: item.iconURL({ extension: 'png', size: 64 }) || '' })),
       textChannels: targetGuild?.channels.cache.filter((item) => item.isTextBased?.() && item.isSendable?.() && !item.isThread?.()).map((item) => ({ id: item.id, name: item.name })) || [],
       voiceChannel: channel?.name || 'Aucun salon',
@@ -84,7 +88,7 @@ export function createDesktopBridge(client, music) {
   }
 
   function send(socket, message) { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
-  function broadcast() { const message = JSON.stringify({ type: 'state', payload: state() }); for (const socket of server.clients) if (socket.readyState === WebSocket.OPEN && authenticated.has(socket)) socket.send(message); }
+  function broadcast() { for (const socket of server.clients) if (socket.readyState === WebSocket.OPEN && authenticated.has(socket)) send(socket, { type: 'state', payload: state(contexts.get(socket) || {}) }); }
 
   async function connectedPlayer(context) {
     const targetGuild = guild();
@@ -110,6 +114,8 @@ export function createDesktopBridge(client, music) {
       return;
     }
     const targetGuild = guild();
+    const userId = String(context.discordUserId || '').trim();
+    if (userId && targetGuild) await targetGuild.members.fetch(userId).catch(() => null);
     let player = targetGuild ? music.get(targetGuild.id) : null;
     if (action === 'get_state') return;
     if (['play_now', 'play_next', 'enqueue'].includes(action)) player = await connectedPlayer(context);
@@ -136,7 +142,7 @@ export function createDesktopBridge(client, music) {
           authenticated.add(socket); send(socket, { type: 'state', payload: state() }); return;
         }
         if (!authenticated.has(socket) || message.type !== 'command') return;
-        await command(message.action, message.payload, message.context || lastContext);
+        const context = message.context || lastContext; contexts.set(socket, context); await command(message.action, message.payload, context);
         send(socket, { type: 'event', event: 'command_result', payload: { requestId: message.requestId, ok: true } });
         setTimeout(broadcast, 250);
       } catch (error) {

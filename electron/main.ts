@@ -1,12 +1,14 @@
 import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import http from 'node:http';
+import crypto from 'node:crypto';
 import { spawn, ChildProcess } from 'node:child_process';
 import { autoUpdater } from 'electron-updater';
 
-app.setName('NEWAA Music');
+app.setName('Inazuma Music');
 
-type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; discordUserId: string; preferredGuildId: string; preferredTextChannelId: string };
+type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; discordUserId: string; discordUserName: string; discordAvatar: string; preferredGuildId: string; preferredTextChannelId: string };
 function bundledRemote(): Partial<Config> {
   try {
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets/remote-config.json'), 'utf8'));
@@ -15,7 +17,7 @@ function bundledRemote(): Partial<Config> {
   } catch { return {}; }
 }
 const remote = bundledRemote();
-const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, discordUserId: '', preferredGuildId: '', preferredTextChannelId: '' };
+const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '' };
 let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 
@@ -72,7 +74,7 @@ ipcMain.handle('config:set', (_e, config: Config) => {
 });
 ipcMain.handle('youtube:search', async (_e, query: string, pageToken = '') => {
   const config = getConfig();
-  if (!config.apiToken || !config.wsUrl) throw new Error('La connexion permanente NEWAA Music est indisponible.');
+  if (!config.apiToken || !config.wsUrl) throw new Error('La connexion permanente Inazuma Music est indisponible.');
   const endpoint = new URL(config.wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:'));
   endpoint.pathname = '/youtube/search';
   endpoint.search = new URLSearchParams({ q: query, ...(pageToken ? { pageToken } : {}) }).toString();
@@ -80,6 +82,34 @@ ipcMain.handle('youtube:search', async (_e, query: string, pageToken = '') => {
   const data = await response.json() as { error?: string; items?: unknown[]; nextPageToken?: string };
   if (!response.ok) throw new Error(data.error || `Recherche YouTube indisponible (${response.status}).`);
   return data;
+});
+ipcMain.handle('discord:login', async (_e, clientId: string) => {
+  if (!/^\d{17,20}$/.test(clientId)) throw new Error('Application Discord indisponible.');
+  const redirectUri = 'http://127.0.0.1:53682/callback';
+  const state = crypto.randomBytes(24).toString('hex');
+  return new Promise<{id:string;name:string;avatar:string}>((resolve, reject) => {
+    let finished = false;
+    const done = (error?: Error, value?: {id:string;name:string;avatar:string}) => { if(finished)return;finished=true;server.close();clearTimeout(timeout);error?reject(error):resolve(value!); };
+    const server = http.createServer(async (request, response) => {
+      const url = new URL(request.url || '/', redirectUri);
+      if (url.pathname === '/callback') {
+        response.writeHead(200, {'content-type':'text/html; charset=utf-8','cache-control':'no-store'});
+        response.end(`<!doctype html><meta charset="utf-8"><title>Inazuma Music</title><style>body{background:#0b0910;color:#fff;font:16px system-ui;display:grid;place-items:center;height:100vh;margin:0}div{text-align:center}b{color:#ffc34d}</style><div><h2>Connexion à <b>Inazuma Music</b></h2><p>Validation en cours…</p></div><script>const p=new URLSearchParams(location.hash.slice(1));fetch('/complete',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(Object.fromEntries(p))}).then(()=>{document.querySelector('p').textContent='Connexion réussie. Tu peux fermer cette page.'}).catch(()=>{document.querySelector('p').textContent='Connexion impossible.'});</script>`);
+        return;
+      }
+      if (url.pathname === '/complete' && request.method === 'POST') {
+        let raw='';for await(const chunk of request)raw+=chunk;const body=JSON.parse(raw||'{}');
+        response.writeHead(204).end();
+        if(body.state!==state||!body.access_token)return done(new Error('Réponse Discord invalide.'));
+        try{const api=await fetch('https://discord.com/api/v10/users/@me',{headers:{authorization:`Bearer ${body.access_token}`}});if(!api.ok)throw new Error('Discord a refusé la connexion.');const user=await api.json() as {id:string;username:string;global_name?:string|null;avatar?:string|null};const avatar=user.avatar?`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`:'';done(undefined,{id:user.id,name:user.global_name||user.username,avatar})}catch(error){done(error instanceof Error?error:new Error(String(error)))}
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    server.once('error',()=>done(new Error('Impossible d’ouvrir la connexion Discord. Ferme les autres fenêtres Inazuma et réessaie.')));
+    server.listen(53682,'127.0.0.1',()=>{const params=new URLSearchParams({response_type:'token',client_id:clientId,redirect_uri:redirectUri,scope:'identify',state,prompt:'consent'});shell.openExternal(`https://discord.com/oauth2/authorize?${params}`).catch(error=>done(error));});
+    const timeout=setTimeout(()=>done(new Error('La connexion Discord a expiré.')),120_000);
+  });
 });
 ipcMain.handle('bot:start', () => {
   if (botProcess) return { ok: true, message: 'Le bot est déjà lancé.' };
@@ -92,6 +122,8 @@ ipcMain.handle('bot:start', () => {
 });
 ipcMain.handle('bot:stop', () => { if (!botProcess) return { ok: true, message: 'Aucun bot lancé par l’application.' }; botProcess.kill(); botProcess = null; return { ok: true, message: 'Arrêt demandé.' }; });
 ipcMain.handle('external:open', (_e, url: string) => { if (/^https:\/\/(www\.)?youtube\.com\//.test(url)) return shell.openExternal(url); });
+ipcMain.handle('app:info', () => ({ name: app.getName(), version: app.getVersion() }));
+ipcMain.handle('app:quit', () => app.quit());
 app.whenReady().then(() => {
   const bootstrapKey = process.env.NEWAA_YOUTUBE_API_KEY;
   if (bootstrapKey) {

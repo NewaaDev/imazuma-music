@@ -1,4 +1,4 @@
-# NEWAA Music Desktop
+# Inazuma Music Desktop
 
 Application Windows avec historique local persistant, playlists intégrées et mises à jour automatiques via les versions GitHub publiques.
 
@@ -13,7 +13,7 @@ Pour copier l'identifiant : Discord > Paramètres avancés > Mode développeur, 
 clic droit sur votre profil > **Copier l'identifiant utilisateur**. Cet identifiant
 est public ; l'application ne demande et ne conserve jamais de token utilisateur.
 
-Application Windows noir/violet pour contrôler NEWAA Music. La version 1.1 utilise une passerelle Cloudflare permanente préconfigurée : les amis installent l’application une seule fois et n’ont aucune clé YouTube à créer.
+Application Windows noir/violet pour contrôler Inazuma Music. Elle utilise une passerelle Cloudflare permanente préconfigurée : les amis installent l’application une seule fois et n’ont aucune clé YouTube à créer.
 
 ## Lancer l'application
 

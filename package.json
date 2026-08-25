@@ -1,13 +1,13 @@
 {
-  "name": "newaa-music-desktop",
-  "version": "1.4.1",
+  "name": "inazuma-music-desktop",
+  "version": "1.4.2",
   "private": true,
-  "description": "Application Windows de contrôle pour NEWAA Music",
+  "description": "Application Windows de contrôle pour Inazuma Music",
   "author": "NEWAA",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
-    "build": "tsc -b && vite build && tsc -p electron/tsconfig.json && electron-builder --win nsis && electron-builder --win portable --config.win.artifactName=NEWAA-Music-${version}-${arch}-portable.${ext}",
+    "build": "tsc -b && vite build && tsc -p electron/tsconfig.json && electron-builder --win nsis && electron-builder --win portable --config.win.artifactName=Inazuma-Music-${version}-${arch}-portable.${ext}",
     "build:dir": "tsc -b && vite build && tsc -p electron/tsconfig.json && electron-builder --dir",
     "typecheck": "tsc -b --pretty false && tsc -p electron/tsconfig.json --pretty false"
   },
@@ -34,7 +34,7 @@
   },
   "build": {
     "appId": "fr.newaa.music",
-    "productName": "NEWAA Music",
+    "productName": "Inazuma Music",
     "directories": {
       "output": "release"
     },
@@ -50,7 +50,7 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "NEWAA-Music-${version}-${arch}-setup.${ext}",
+      "artifactName": "Inazuma-Music-${version}-${arch}-setup.${ext}",
       "icon": "assets/icon.ico",
       "signAndEditExecutable": true
     },
