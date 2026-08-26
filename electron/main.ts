@@ -12,13 +12,11 @@ app.setName('Inazuma Music');
 type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; theme:'inazuma'|'midnight'|'ember'; discordClientId: string; discordUserId: string; discordUserName: string; discordAvatar: string; preferredGuildId: string; preferredTextChannelId: string; autoJoin: boolean; autoLeave: boolean; controlMode:'private'|'shared'; allowedRoleIds:string; audioPreset:'normal'|'bass'|'vocal'|'night'; normalizeVolume:boolean; crossfadeSeconds:number; presenceEnabled: boolean; presenceType:'playing'|'listening'|'watching'|'competing'; presenceShowTrack:boolean; presenceDetails: string; presenceState:string; presenceLargeImageKey:string; presenceLargeImageText:string; presenceLinkLabel: string; presenceLinkUrl: string; presenceDownloadLabel: string; presenceDownloadUrl: string };
 function bundledRemote(): Partial<Config> {
   try {
-    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets/remote-config.json'), 'utf8'));
-    const token = fs.readFileSync(path.join(__dirname, '../assets/remote-access-token.txt'), 'utf8').trim();
-    return { ...config, apiToken: token };
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '../assets/remote-config.json'), 'utf8'));
   } catch { return {}; }
 }
 const remote = bundledRemote();
-const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', discordClientId: '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds: '', audioPreset: 'normal', normalizeVolume: true, crossfadeSeconds: 3, presenceEnabled: true, presenceType:'listening', presenceShowTrack:true, presenceDetails: 'En écoute sur Inazuma Music', presenceState:'Version 2.0 • OFFICIEL', presenceLargeImageKey:'inazuma_music_logo', presenceLargeImageText:'Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: '' };
+const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', discordClientId: remote.discordClientId || '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds: '', audioPreset: 'normal', normalizeVolume: true, crossfadeSeconds: 3, presenceEnabled: true, presenceType:'listening', presenceShowTrack:true, presenceDetails: 'En écoute sur Inazuma Music', presenceState:'Version 2.0 • OFFICIEL', presenceLargeImageKey:'inazuma_music_logo', presenceLargeImageText:'Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: 'https://github.com/NewaaDev/imazuma-music/releases/latest' };
 let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
@@ -74,19 +72,18 @@ function reveal(value: unknown) {
 }
 function getConfig(): Config {
   let store = readStore();
-  if (remote.apiToken && !store.apiToken) {
-    const currentPublic = store.public as Partial<Config> || {};
-    store = { ...store, public: { ...currentPublic, wsUrl: remote.wsUrl || currentPublic.wsUrl }, apiToken: protect(remote.apiToken) };
+  if (store.sessionVersion !== 2) {
+    store = { ...store, sessionVersion: 2, apiToken: '' };
     writeStore(store);
   }
   const saved = store.public as Partial<Config> || {};
   if(saved.presenceState&&/B[ÊE]TA/i.test(saved.presenceState))saved.presenceState='Version 2.0 • OFFICIEL';
-  const permanent = Boolean(remote.wsUrl && remote.apiToken);
   return {
     ...defaults,
     ...saved,
-    wsUrl: permanent ? defaults.wsUrl : (saved.wsUrl || defaults.wsUrl),
-    apiToken: permanent ? defaults.apiToken : (reveal(store.apiToken) || defaults.apiToken),
+    wsUrl: remote.wsUrl || saved.wsUrl || defaults.wsUrl,
+    discordClientId: remote.discordClientId || saved.discordClientId || defaults.discordClientId,
+    apiToken: reveal(store.apiToken),
     youtubeApiKey: reveal(store.youtubeApiKey),
   };
 }
@@ -119,14 +116,14 @@ ipcMain.handle('config:set', (_e, config: Config) => {
   const { apiToken, youtubeApiKey, ...publicConfig } = config;
   const current = readStore();
   const previousPublic = current.public as Partial<Config> || {};
-  writeStore({ public: { ...previousPublic, ...publicConfig, discordClientId: publicConfig.discordClientId || previousPublic.discordClientId || '' }, apiToken: protect(apiToken), youtubeApiKey: protect(youtubeApiKey) });
+  writeStore({ sessionVersion: 2, public: { ...previousPublic, ...publicConfig, discordClientId: publicConfig.discordClientId || previousPublic.discordClientId || '' }, apiToken: protect(apiToken), youtubeApiKey: protect(youtubeApiKey) });
   const saved = getConfig();
   void setupRichPresence(saved);
   return saved;
 });
 ipcMain.handle('youtube:search', async (_e, query: string, pageToken = '') => {
   const config = getConfig();
-  if (!config.apiToken || !config.wsUrl) throw new Error('La connexion permanente Inazuma Music est indisponible.');
+  if (!config.apiToken || !config.wsUrl) throw new Error('Connecte-toi avec Discord pour utiliser les services Inazuma Music.');
   const endpoint = new URL(config.wsUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:'));
   endpoint.pathname = '/youtube/search';
   endpoint.search = new URLSearchParams({ q: query, ...(pageToken ? { pageToken } : {}) }).toString();
@@ -158,9 +155,9 @@ ipcMain.handle('discord:login', async (_e, clientId: string) => {
   writeStore({ ...current, public: { ...(current.public as Partial<Config> || {}), discordClientId: clientId } });
   const redirectUri = 'http://127.0.0.1:53682/callback';
   const state = crypto.randomBytes(24).toString('hex');
-  return new Promise<{id:string;name:string;avatar:string}>((resolve, reject) => {
+  return new Promise<{id:string;name:string;avatar:string;apiToken:string}>((resolve, reject) => {
     let finished = false;
-    const done = (error?: Error, value?: {id:string;name:string;avatar:string}) => { if(finished)return;finished=true;server.close();clearTimeout(timeout);error?reject(error):resolve(value!); };
+    const done = (error?: Error, value?: {id:string;name:string;avatar:string;apiToken:string}) => { if(finished)return;finished=true;server.close();clearTimeout(timeout);error?reject(error):resolve(value!); };
     const server = http.createServer(async (request, response) => {
       const url = new URL(request.url || '/', redirectUri);
       if (url.pathname === '/callback') {
@@ -172,7 +169,7 @@ ipcMain.handle('discord:login', async (_e, clientId: string) => {
         let raw='';for await(const chunk of request)raw+=chunk;const body=JSON.parse(raw||'{}');
         response.writeHead(204).end();
         if(body.state!==state||!body.access_token)return done(new Error('Réponse Discord invalide.'));
-        try{const api=await fetch('https://discord.com/api/v10/users/@me',{headers:{authorization:`Bearer ${body.access_token}`}});if(!api.ok)throw new Error('Discord a refusé la connexion.');const user=await api.json() as {id:string;username:string;global_name?:string|null;avatar?:string|null};const avatar=user.avatar?`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`:'';done(undefined,{id:user.id,name:user.global_name||user.username,avatar})}catch(error){done(error instanceof Error?error:new Error(String(error)))}
+        try{const config=getConfig();const sessionUrl=new URL(config.wsUrl.replace(/^wss:/,'https:').replace(/^ws:/,'http:'));sessionUrl.pathname='/session';sessionUrl.search='';const api=await fetch(sessionUrl,{method:'POST',headers:{authorization:`Bearer ${body.access_token}`}});const data=await api.json() as {token?:string;user?:{id:string;name:string;avatar:string};error?:string};if(!api.ok||!data.token||!data.user)throw new Error(data.error||'Discord a refusé la connexion.');done(undefined,{...data.user,apiToken:data.token})}catch(error){done(error instanceof Error?error:new Error(String(error)))}
         return;
       }
       response.writeHead(404).end();

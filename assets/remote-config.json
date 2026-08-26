@@ -1,0 +1,5 @@
+{
+  "wsUrl": "wss://newaa-music-relay.augchast.workers.dev/ws",
+  "demoMode": false,
+  "discordClientId": "1504302353501782116"
+}

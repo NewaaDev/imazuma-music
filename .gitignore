@@ -5,6 +5,5 @@ release/
 .wrangler/
 *.log
 .env
-assets/remote-config.json
 assets/remote-access-token.txt
 *.tsbuildinfo

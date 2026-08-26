@@ -25,6 +25,11 @@ async function sameSecret(left: string, right: string): Promise<boolean> {
   for (let index = 0; index < x.length; index += 1) difference |= x[index] ^ y[index];
   return difference === 0;
 }
+const b64=(value:Uint8Array)=>btoa(String.fromCharCode(...value)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const unb64=(value:string)=>Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4)),c=>c.charCodeAt(0));
+async function signSession(userId:string,secret:string){const payload=b64(new TextEncoder().encode(JSON.stringify({sub:userId,exp:Date.now()+7*86400000})));const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);return `${payload}.${b64(new Uint8Array(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(payload))))}`}
+async function validSession(token:string,secret:string){try{const[payload,signature]=token.split('.');if(!payload||!signature)return false;const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['verify']);if(!await crypto.subtle.verify('HMAC',key,unb64(signature),new TextEncoder().encode(payload)))return false;const data=JSON.parse(new TextDecoder().decode(unb64(payload))) as {sub?:string;exp?:number};return Boolean(data.sub&&Number(data.exp)>Date.now())}catch{return false}}
+async function authorized(request:Request,env:Env){const token=bearer(request);return sameSecret(token,env.ACCESS_TOKEN).then(ok=>ok||validSession(token,env.ACCESS_TOKEN))}
 
 export class MusicRoom extends DurableObject<Env> {
   private latestState = "";
@@ -56,8 +61,14 @@ export class MusicRoom extends DurableObject<Env> {
     }
 
     if (attachment.role === "pending") {
-      if (message.type !== "auth" || typeof message.token !== "string" || !(await sameSecret(message.token, this.env.ACCESS_TOKEN))) {
+      const botSecret = message.type === "auth" && typeof message.token === "string" && await sameSecret(message.token, this.env.ACCESS_TOKEN);
+      const userSession = message.type === "auth" && typeof message.token === "string" && await validSession(message.token, this.env.ACCESS_TOKEN);
+      if (!botSecret && !userSession) {
         socket.close(4001, "Authentification refusée");
+        return;
+      }
+      if (message.role === "bot" && !botSecret) {
+        socket.close(4001, "Authentification bot refusée");
         return;
       }
       const role: SocketRole = message.role === "bot" ? "bot" : "client";
@@ -106,7 +117,7 @@ export class MusicRoom extends DurableObject<Env> {
 }
 
 async function youtubeSearch(request: Request, env: Env): Promise<Response> {
-  if (!(await sameSecret(bearer(request), env.ACCESS_TOKEN))) return json({ error: "Accès refusé" }, 401);
+  if (!(await authorized(request,env))) return json({ error: "Accès refusé" }, 401);
   const url = new URL(request.url);
   const query = (url.searchParams.get("q") || "").trim().slice(0, 160);
   const pageToken = (url.searchParams.get("pageToken") || "").slice(0, 200);
@@ -146,7 +157,7 @@ async function hash(value:string):Promise<string>{const data=await crypto.subtle
 type PublicPlaylistRow={id:string;owner_name:string;owner_avatar:string;name:string;tracks_json:string;updated_at:number};
 function playlistRow(row:PublicPlaylistRow){let tracks:unknown[]=[];try{const parsed=JSON.parse(row.tracks_json);if(Array.isArray(parsed))tracks=parsed}catch{}return{id:row.id,name:row.name,createdAt:row.updated_at,tracks,visibility:'public',ownerName:row.owner_name,ownerAvatar:row.owner_avatar}}
 async function playlistsApi(request:Request,env:Env,url:URL):Promise<Response>{
-  if(!(await sameSecret(bearer(request),env.ACCESS_TOKEN)))return json({error:'Accès refusé'},401);
+  if(!(await authorized(request,env)))return json({error:'Accès refusé'},401);
   if(request.method==='GET'){
     const q=`%${(url.searchParams.get('q')||'').trim().slice(0,80)}%`;
     const result=await env.DB.prepare('SELECT id,owner_name,owner_avatar,name,tracks_json,updated_at FROM public_playlists WHERE name LIKE ? OR owner_name LIKE ? ORDER BY updated_at DESC LIMIT 60').bind(q,q).all<PublicPlaylistRow>();
@@ -167,7 +178,7 @@ async function playlistsApi(request:Request,env:Env,url:URL):Promise<Response>{
 
 async function mediaApi(request:Request,env:Env,url:URL):Promise<Response>{
   if(request.method==='PUT'){
-    if(!(await sameSecret(bearer(request),env.ACCESS_TOKEN)))return json({error:'Accès refusé'},401);
+    if(!(await authorized(request,env)))return json({error:'Accès refusé'},401);
     const size=Number(request.headers.get('content-length')||0);if(!size||size>30*1024*1024)return json({error:'MP3 invalide ou supérieur à 30 Mo.'},413);
     if(request.headers.get('content-type')?.split(';')[0]!=='audio/mpeg'||!request.body)return json({error:'Seuls les fichiers MP3 sont acceptés.'},415);
     const id=crypto.randomUUID();const key=`uploads/${id}.mp3`;const encoded=request.headers.get('x-file-name')||'musique.mp3';let title='musique';try{title=decodeURIComponent(encoded).replace(/\.mp3$/i,'').slice(0,120)||title}catch{}
@@ -188,6 +199,7 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/health") return json({ ok: true, service: "Inazuma Music" });
+    if(url.pathname==='/session'&&request.method==='POST'){const token=bearer(request);const discord=await fetch('https://discord.com/api/v10/users/@me',{headers:{authorization:`Bearer ${token}`}});if(!discord.ok)return json({error:'Connexion Discord refusée'},401);const user=await discord.json<{id:string;username:string;global_name?:string|null;avatar?:string|null}>();return json({token:await signSession(user.id,env.ACCESS_TOKEN),user:{id:user.id,name:user.global_name||user.username,avatar:user.avatar?`https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`:''}})}
     if (url.pathname === "/youtube/search" && request.method === "GET") return youtubeSearch(request, env);
     if (url.pathname === '/media' || url.pathname.startsWith('/media/')) return mediaApi(request,env,url);
     if (url.pathname === "/playlists" || url.pathname.startsWith('/playlists/')) return playlistsApi(request,env,url);
