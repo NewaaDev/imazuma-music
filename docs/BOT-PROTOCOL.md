@@ -1,4 +1,4 @@
-# Protocole WebSocket NEWAA Music
+# Protocole WebSocket Inazuma Music
 
 Valeur par défaut : `ws://127.0.0.1:8765`.
 
@@ -31,7 +31,7 @@ Un `Track` contient `id`, `title`, `channel`, `thumbnail`, `duration` et éventu
 {
   "type": "state",
   "payload": {
-    "botOnline": true, "guildName": "NEWAA Community", "voiceChannel": "Musique",
+    "botOnline": true, "guildName": "Communauté Inazuma", "voiceChannel": "Musique",
     "playing": true, "volume": 64, "position": 28,
     "current": { "id":"...", "title":"...", "channel":"...", "thumbnail":"...", "duration":"3:42" },
     "queue": [], "history": []

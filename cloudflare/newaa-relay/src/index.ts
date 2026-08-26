@@ -168,7 +168,7 @@ async function playlistsApi(request:Request,env:Env,url:URL):Promise<Response>{
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/health") return json({ ok: true, service: "NEWAA Music" });
+    if (url.pathname === "/health") return json({ ok: true, service: "Inazuma Music" });
     if (url.pathname === "/youtube/search" && request.method === "GET") return youtubeSearch(request, env);
     if (url.pathname === "/playlists" || url.pathname.startsWith('/playlists/')) return playlistsApi(request,env,url);
     if (url.pathname === "/ws") return env.MUSIC_ROOM.getByName("newaa-main").fetch(request);

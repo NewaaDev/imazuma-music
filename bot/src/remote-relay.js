@@ -38,7 +38,7 @@ export function createRemoteRelay() {
   }
 
   connectRemote();
-  console.log(`Relais distant NEWAA Music : ${config.remoteRelayUrl}`);
+  console.log(`Relais distant Inazuma Music : ${config.remoteRelayUrl}`);
   return {
     close() {
       stopped = true;

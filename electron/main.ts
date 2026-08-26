@@ -5,10 +5,11 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { spawn, ChildProcess } from 'node:child_process';
 import { autoUpdater } from 'electron-updater';
+import DiscordRPC from 'discord-rpc';
 
 app.setName('Inazuma Music');
 
-type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; discordUserId: string; discordUserName: string; discordAvatar: string; preferredGuildId: string; preferredTextChannelId: string };
+type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; discordClientId: string; discordUserId: string; discordUserName: string; discordAvatar: string; preferredGuildId: string; preferredTextChannelId: string; autoJoin: boolean; autoLeave: boolean; presenceEnabled: boolean; presenceDetails: string; presenceLinkLabel: string; presenceLinkUrl: string; presenceDownloadLabel: string; presenceDownloadUrl: string };
 function bundledRemote(): Partial<Config> {
   try {
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets/remote-config.json'), 'utf8'));
@@ -17,9 +18,41 @@ function bundledRemote(): Partial<Config> {
   } catch { return {}; }
 }
 const remote = bundledRemote();
-const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '' };
+const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, discordClientId: '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, presenceEnabled: true, presenceDetails: 'En écoute sur Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: '' };
 let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
+let discordRpc: DiscordRPC.Client | null = null;
+
+function validPresenceButton(label: string, url: string) {
+  return label.trim() && /^https:\/\//i.test(url) ? { label: label.trim().slice(0, 32), url } : null;
+}
+
+async function setupRichPresence(config: Config) {
+  discordRpc?.destroy().catch(() => {});
+  discordRpc = null;
+  if (!config.presenceEnabled || !/^\d{17,20}$/.test(config.discordClientId)) return;
+  const rpc = new DiscordRPC.Client({ transport: 'ipc' });
+  discordRpc = rpc;
+  try {
+    await rpc.login({ clientId: config.discordClientId });
+    const buttons = [
+      validPresenceButton(config.presenceLinkLabel, config.presenceLinkUrl),
+      validPresenceButton(config.presenceDownloadLabel, config.presenceDownloadUrl),
+    ].filter((button): button is {label:string;url:string} => Boolean(button));
+    await rpc.setActivity({
+      details: config.presenceDetails.trim().slice(0, 128) || 'En écoute sur Inazuma Music',
+      state: 'Version 2.0 • BÊTA',
+      largeImageKey: 'inazuma',
+      largeImageText: 'Inazuma Music',
+      buttons: buttons.length ? buttons : undefined,
+      instance: false,
+    });
+  } catch (error) {
+    console.error('[Inazuma Music] Rich Presence indisponible:', error instanceof Error ? error.message : String(error));
+    if (discordRpc === rpc) discordRpc = null;
+    rpc.destroy().catch(() => {});
+  }
+}
 
 function readStore(): Record<string, unknown> {
   try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8')); } catch { return {}; }
@@ -69,8 +102,12 @@ ipcMain.handle('library:get',()=>getLibrary());
 ipcMain.handle('library:set',(_e,value)=>saveLibrary(value));
 ipcMain.handle('config:set', (_e, config: Config) => {
   const { apiToken, youtubeApiKey, ...publicConfig } = config;
-  writeStore({ public: publicConfig, apiToken: protect(apiToken), youtubeApiKey: protect(youtubeApiKey) });
-  return getConfig();
+  const current = readStore();
+  const previousPublic = current.public as Partial<Config> || {};
+  writeStore({ public: { ...previousPublic, ...publicConfig, discordClientId: publicConfig.discordClientId || previousPublic.discordClientId || '' }, apiToken: protect(apiToken), youtubeApiKey: protect(youtubeApiKey) });
+  const saved = getConfig();
+  void setupRichPresence(saved);
+  return saved;
 });
 ipcMain.handle('youtube:search', async (_e, query: string, pageToken = '') => {
   const config = getConfig();
@@ -89,6 +126,8 @@ ipcMain.handle('playlists:publish',async(_e,playlist)=>{const{endpoint,config}=r
 ipcMain.handle('playlists:unpublish',async(_e,id,shareKey)=>{const{endpoint,config}=relayEndpoint(`/playlists/${encodeURIComponent(String(id))}`);const response=await fetch(endpoint,{method:'DELETE',headers:{authorization:`Bearer ${config.apiToken}`,'content-type':'application/json'},body:JSON.stringify({shareKey})});const data=await response.json() as {error?:string};if(!response.ok)throw new Error(data.error||'Retrait impossible.');});
 ipcMain.handle('discord:login', async (_e, clientId: string) => {
   if (!/^\d{17,20}$/.test(clientId)) throw new Error('Application Discord indisponible.');
+  const current = readStore();
+  writeStore({ ...current, public: { ...(current.public as Partial<Config> || {}), discordClientId: clientId } });
   const redirectUri = 'http://127.0.0.1:53682/callback';
   const state = crypto.randomBytes(24).toString('hex');
   return new Promise<{id:string;name:string;avatar:string}>((resolve, reject) => {
@@ -137,7 +176,7 @@ app.whenReady().then(() => {
     app.quit();
     return;
   }
-  createWindow();setupUpdates();
+  createWindow();setupUpdates();void setupRichPresence(getConfig());
 });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { discordRpc?.destroy().catch(() => {}); if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

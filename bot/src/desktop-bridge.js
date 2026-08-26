@@ -32,7 +32,7 @@ function botTrack(track) {
     channel: track.channel || 'YouTube',
     thumbnail: track.thumbnail || null,
     duration: durationSeconds(track.duration),
-    requestedBy: 'NEWAA Desktop',
+    requestedBy: 'Inazuma Music',
     url: `https://www.youtube.com/watch?v=${track.id}`,
   };
 }
@@ -41,6 +41,7 @@ export function createDesktopBridge(client, music) {
   const server = new WebSocketServer({ host: '127.0.0.1', port: config.desktopPort });
   const authenticated = new WeakSet();
   const contexts = new WeakMap();
+  const trackedUsers = new Map();
   let selectedGuildId = config.guildId && client.guilds.cache.has(config.guildId) ? config.guildId : client.guilds.cache.firstKey();
   let lastContext = {};
 
@@ -74,13 +75,19 @@ export function createDesktopBridge(client, music) {
     const player = targetGuild ? music.get(targetGuild.id) : null;
     const channelId = player?.connection?.joinConfig?.channelId;
     const channel = channelId ? targetGuild.channels.cache.get(channelId) : null;
+    const voiceMembers = channel?.members?.map((member) => ({
+      id: member.id,
+      name: member.displayName || member.user.globalName || member.user.username,
+      avatar: member.user.displayAvatarURL({ extension: 'png', size: 128 }),
+      bot: member.user.bot,
+    })) || [];
     const elapsed = Math.floor((player?.seekOffset || 0) + (player?.player?.state?.resource?.playbackDuration || 0) / 1000);
     const total = durationSeconds(player?.current?.duration);
     return {
       botOnline: client.isReady(), discordClientId: client.application?.id || client.user?.id || '', userName: member?.displayName || user?.globalName || user?.username || '', userAvatar: user?.displayAvatarURL({ extension: 'png', size: 128 }) || '', guildId: targetGuild?.id || '', guildName: targetGuild?.name || 'Aucun serveur',
       guilds: client.guilds.cache.map((item) => ({ id: item.id, name: item.name, icon: item.iconURL({ extension: 'png', size: 64 }) || '' })),
       textChannels: targetGuild?.channels.cache.filter((item) => item.isTextBased?.() && item.isSendable?.() && !item.isThread?.()).map((item) => ({ id: item.id, name: item.name })) || [],
-      voiceChannel: channel?.name || 'Aucun salon',
+      voiceChannel: channel?.name || 'Aucun salon', voiceMembers,
       playing: player?.player?.state?.status === AudioPlayerStatus.Playing, volume: player?.volume ?? config.defaultVolume,
       position: total > 0 ? Math.min(100, (elapsed / total) * 100) : 0, elapsed,
       current: desktopTrack(player?.current), queue: (player?.queue || []).map(desktopTrack), history: [],
@@ -103,6 +110,7 @@ export function createDesktopBridge(client, music) {
 
   async function command(action, payload, context = {}) {
     lastContext = context;
+    if (context.discordUserId) trackedUsers.set(String(context.discordUserId), context);
     const preferredGuildId = String(context.preferredGuildId || '');
     if (preferredGuildId) {
       if (!client.guilds.cache.has(preferredGuildId)) throw new Error('Le bot n’est pas présent sur ton serveur préféré.');
@@ -152,6 +160,21 @@ export function createDesktopBridge(client, music) {
     });
   });
   const timer = setInterval(broadcast, 2_000);
-  server.on('listening', () => console.log(`Passerelle NEWAA Desktop : ws://127.0.0.1:${config.desktopPort}`));
-  return { close: () => { clearInterval(timer); server.close(); } };
+  server.on('listening', () => console.log(`Passerelle Inazuma Music : ws://127.0.0.1:${config.desktopPort}`));
+  return {
+    async handleVoiceStateUpdate(oldState, newState) {
+      const context = trackedUsers.get(newState.id);
+      if (!context || oldState.channelId === newState.channelId) return;
+      const player = music.get(newState.guild.id);
+      if (context.autoJoin !== false && newState.channel && player?.current) {
+        await player.connect(newState.channel, textChannel(newState.guild, context)).catch((error) => console.error('[Inazuma Music] Auto-join:', error.message));
+      }
+      if (context.autoLeave !== false && oldState.channel && !newState.channelId && player?.voiceChannel?.id === oldState.channelId) {
+        const listeners = oldState.channel.members.filter((member) => !member.user.bot);
+        if (listeners.size === 0) player.destroy();
+      }
+      broadcast();
+    },
+    close: () => { clearInterval(timer); server.close(); },
+  };
 }

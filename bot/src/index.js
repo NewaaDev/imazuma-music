@@ -17,6 +17,7 @@ client.once(Events.ClientReady, (readyClient) => {
   remoteRelay = createRemoteRelay();
 });
 client.on(Events.InteractionCreate, (interaction) => handleInteraction(interaction, music));
+client.on(Events.VoiceStateUpdate, (oldState, newState) => desktopBridge?.handleVoiceStateUpdate(oldState, newState));
 client.on(Events.Error, (error) => console.error('Erreur Discord:', error));
 
 async function shutdown(signal) {

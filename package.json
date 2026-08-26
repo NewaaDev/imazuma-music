@@ -1,6 +1,6 @@
 {
   "name": "inazuma-music-desktop",
-  "version": "1.5.0",
+  "version": "2.0.0-beta.1",
   "private": true,
   "description": "Application Windows de contrôle pour Inazuma Music",
   "author": "NEWAA",
@@ -13,14 +13,16 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "discord-rpc": "^4.0.1",
+    "electron-updater": "^6.6.2",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "vite": "^6.0.5",
-    "electron-updater": "^6.6.2"
+    "vite": "^6.0.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260820.1",
+    "@types/discord-rpc": "^4.0.8",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
@@ -45,7 +47,14 @@
       "package.json"
     ],
     "asar": true,
-    "publish": [{ "provider": "github", "owner": "NewaaDev", "repo": "imazuma-music", "releaseType": "release" }],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "NewaaDev",
+        "repo": "imazuma-music",
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "target": [
         "nsis"
