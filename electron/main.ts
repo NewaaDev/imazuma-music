@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Notification, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Notification, safeStorage, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -23,6 +23,8 @@ let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
 let discordRpc: DiscordRPC.Client | null = null;
+let presenceTrack: {title?:string;channel?:string}|null = null;
+let presencePlaying = false;
 
 function validPresenceButton(label: string, url: string) {
   return label.trim() && /^https:\/\//i.test(url) ? { label: label.trim().slice(0, 32), url } : null;
@@ -41,8 +43,8 @@ async function setupRichPresence(config: Config) {
       validPresenceButton(config.presenceDownloadLabel, config.presenceDownloadUrl),
     ].filter((button): button is {label:string;url:string} => Boolean(button));
     await rpc.setActivity({
-      details: config.presenceDetails.trim().slice(0, 128) || 'En écoute sur Inazuma Music',
-      state: 'Version 2.0 • BÊTA',
+      details: (presenceTrack?.title || config.presenceDetails || 'En écoute sur Inazuma Music').trim().slice(0, 128),
+      state: presenceTrack ? `${presencePlaying?'En lecture':'En pause'} • ${(presenceTrack.channel||'Inazuma Music').slice(0,90)}` : 'Version 2.0 • BÊTA',
       largeImageKey: 'inazuma',
       largeImageText: 'Inazuma Music',
       buttons: buttons.length ? buttons : undefined,
@@ -64,8 +66,8 @@ function writeStore(value: Record<string, unknown>) {
 }
 const libraryFile=()=>path.join(app.getPath('userData'),'library.json');
 const emptyStats=()=>({totalSeconds:0,tracksPlayed:0,playCount:{},lastPlayedAt:0});
-function getLibrary(){try{const x=JSON.parse(fs.readFileSync(libraryFile(),'utf8'));return{history:Array.isArray(x.history)?x.history.slice(0,200):[],playlists:Array.isArray(x.playlists)?x.playlists:[],favorites:Array.isArray(x.favorites)?x.favorites.slice(0,500):[],pinned:Array.isArray(x.pinned)?x.pinned.slice(0,100):[],stats:{...emptyStats(),...(x.stats||{})}}}catch{return{history:[],playlists:[],favorites:[],pinned:[],stats:emptyStats()}}}
-function saveLibrary(value:any){const clean={history:Array.isArray(value?.history)?value.history.slice(0,200):[],playlists:Array.isArray(value?.playlists)?value.playlists.map((p:any)=>({id:String(p.id),name:String(p.name).slice(0,80),createdAt:Number(p.createdAt)||Date.now(),tracks:Array.isArray(p.tracks)?p.tracks.slice(0,500):[]})):[],favorites:Array.isArray(value?.favorites)?value.favorites.slice(0,500):[],pinned:Array.isArray(value?.pinned)?value.pinned.slice(0,100):[],stats:{...emptyStats(),...(value?.stats||{})}};fs.mkdirSync(app.getPath('userData'),{recursive:true});fs.writeFileSync(libraryFile(),JSON.stringify(clean,null,2));return clean}
+function getLibrary(){try{const x=JSON.parse(fs.readFileSync(libraryFile(),'utf8'));return{history:Array.isArray(x.history)?x.history.slice(0,200):[],playlists:Array.isArray(x.playlists)?x.playlists:[],favorites:Array.isArray(x.favorites)?x.favorites.slice(0,500):[],pinned:Array.isArray(x.pinned)?x.pinned.slice(0,100):[],searchHistory:Array.isArray(x.searchHistory)?x.searchHistory.slice(0,12):[],stats:{...emptyStats(),...(x.stats||{})}}}catch{return{history:[],playlists:[],favorites:[],pinned:[],searchHistory:[],stats:emptyStats()}}}
+function saveLibrary(value:any){const clean={history:Array.isArray(value?.history)?value.history.slice(0,200):[],playlists:Array.isArray(value?.playlists)?value.playlists.map((p:any)=>({id:String(p.id),name:String(p.name).slice(0,80),createdAt:Number(p.createdAt)||Date.now(),tracks:Array.isArray(p.tracks)?p.tracks.slice(0,500):[]})):[],favorites:Array.isArray(value?.favorites)?value.favorites.slice(0,500):[],pinned:Array.isArray(value?.pinned)?value.pinned.slice(0,100):[],searchHistory:Array.isArray(value?.searchHistory)?value.searchHistory.map(String).slice(0,12):[],stats:{...emptyStats(),...(value?.stats||{})}};fs.mkdirSync(app.getPath('userData'),{recursive:true});fs.writeFileSync(libraryFile(),JSON.stringify(clean,null,2));return clean}
 
 function protect(value: string) {
   if (!value) return '';
@@ -137,16 +139,19 @@ ipcMain.handle('youtube:search', async (_e, query: string, pageToken = '') => {
   if (!response.ok) throw new Error(data.error || `Recherche YouTube indisponible (${response.status}).`);
   return data;
 });
-ipcMain.handle('lyrics:search', async (_e, title: string, artist = '') => {
+ipcMain.handle('lyrics:search', async (_e, title: string, artist = '', duration = 0, broad = false) => {
   const endpoint = new URL('https://lrclib.net/api/search');
-  endpoint.searchParams.set('track_name', String(title || '').slice(0, 160));
-  if (artist) endpoint.searchParams.set('artist_name', String(artist).slice(0, 120));
+  const cleanTitle=String(title||'').replace(/\s*[\[(](official|lyrics?|audio|video|clip).*?[\])]/gi,'').replace(/\s*[-–—]\s*(official|lyrics?|audio|video|clip).*$/gi,'').trim();
+  if(broad) endpoint.searchParams.set('q',`${cleanTitle} ${artist}`.trim().slice(0,220)); else { endpoint.searchParams.set('track_name',cleanTitle.slice(0,160));if(artist)endpoint.searchParams.set('artist_name',String(artist).slice(0,120)); }
   const response = await fetch(endpoint, { headers: { 'user-agent': `Inazuma Music/${app.getVersion()} (desktop lyrics)` } });
   if (!response.ok) throw new Error(`Paroles indisponibles (${response.status}).`);
   const records = await response.json() as Array<{trackName?:string;artistName?:string;duration?:number;syncedLyrics?:string|null;plainLyrics?:string|null;instrumental?:boolean}>;
-  const record = records.find((item) => item.syncedLyrics) || records.find((item) => item.plainLyrics) || null;
+  const ranked=[...records].sort((a,b)=>{const sync=(b.syncedLyrics?1000:0)-(a.syncedLyrics?1000:0);const distance=duration?Math.abs((a.duration||0)-duration)-Math.abs((b.duration||0)-duration):0;return sync+distance});
+  const record = ranked.find((item) => item.syncedLyrics) || ranked.find((item) => item.plainLyrics) || null;
   return record ? { trackName: record.trackName || title, artistName: record.artistName || artist, duration: record.duration || 0, syncedLyrics: record.syncedLyrics || '', plainLyrics: record.plainLyrics || '', instrumental: Boolean(record.instrumental) } : null;
 });
+ipcMain.handle('presence:update',async(_e,track:{title?:string;channel?:string}|null,playing:boolean)=>{presenceTrack=track;presencePlaying=Boolean(playing);await setupRichPresence(getConfig())});
+ipcMain.handle('media:select-upload',async()=>{const picked=await dialog.showOpenDialog(mainWindow!,{title:'Ajouter un MP3 à Inazuma Music',properties:['openFile'],filters:[{name:'Fichiers audio MP3',extensions:['mp3']}]});if(picked.canceled||!picked.filePaths[0])return null;const file=picked.filePaths[0];const stat=fs.statSync(file);if(stat.size>30*1024*1024)throw new Error('Le MP3 dépasse la limite de 30 Mo.');const{endpoint,config}=relayEndpoint('/media');const response=await fetch(endpoint,{method:'PUT',headers:{authorization:`Bearer ${config.apiToken}`,'content-type':'audio/mpeg','content-length':String(stat.size),'x-file-name':encodeURIComponent(path.basename(file))},body:fs.readFileSync(file) as unknown as BodyInit});const data=await response.json() as {id?:string;url?:string;title?:string;error?:string};if(!response.ok||!data.url)throw new Error(data.error||'Upload MP3 impossible.');return{id:data.id||crypto.randomUUID(),title:data.title||path.basename(file,'.mp3'),channel:'Fichier MP3',thumbnail:'',duration:'MP3',source:'mp3',url:data.url}});
 function relayEndpoint(pathname:string){const config=getConfig();if(!config.apiToken||!config.wsUrl)throw new Error('Connexion Inazuma indisponible.');const endpoint=new URL(config.wsUrl.replace(/^wss:/,'https:').replace(/^ws:/,'http:'));endpoint.pathname=pathname;endpoint.search='';return{endpoint,config}}
 ipcMain.handle('playlists:public',async(_e,query='')=>{const{endpoint,config}=relayEndpoint('/playlists');endpoint.searchParams.set('q',String(query).slice(0,80));const response=await fetch(endpoint,{headers:{authorization:`Bearer ${config.apiToken}`}});const data=await response.json() as {items?:unknown[];error?:string};if(!response.ok)throw new Error(data.error||'Playlists publiques indisponibles.');return data.items||[]});
 ipcMain.handle('playlists:publish',async(_e,playlist)=>{const{endpoint,config}=relayEndpoint('/playlists');const response=await fetch(endpoint,{method:'PUT',headers:{authorization:`Bearer ${config.apiToken}`,'content-type':'application/json'},body:JSON.stringify({...playlist,ownerName:config.discordUserName||'Utilisateur',ownerAvatar:config.discordAvatar||''})});const data=await response.json() as {error?:string};if(!response.ok)throw new Error(data.error||'Publication impossible.');});

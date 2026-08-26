@@ -144,30 +144,31 @@ class GuildPlayer extends EventEmitter {
     this.seekOffset = startAt;
     this.recentTrackIds = [...this.recentTrackIds.filter((id) => id !== track.id), track.id].slice(-50);
     this.#killProcesses();
-    const download = createDownload(track);
+    const directMp3=track.source==='mp3'&&/^https:\/\//i.test(track.url||'');
+    const download = directMp3 ? null : createDownload(track);
     const audioFilter = this.#audioFilter(track);
     const ffmpeg = spawn(ffmpegPath, [
-      '-hide_banner', '-loglevel', 'error', '-i', 'pipe:0',
+      '-hide_banner', '-loglevel', 'error', '-i', directMp3?track.url:'pipe:0',
       ...(startAt > 0 ? ['-ss', String(startAt)] : []),
       ...(audioFilter ? ['-af', audioFilter] : []),
       '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1',
     ], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    this.processes = [download, ffmpeg];
+    this.processes = download?[download, ffmpeg]:[ffmpeg];
     const diagnostics = [];
-    download.stderr.on('data', (d) => diagnostics.push(String(d)));
+    download?.stderr.on('data', (d) => diagnostics.push(String(d)));
     ffmpeg.stderr.on('data', (d) => diagnostics.push(String(d)));
     // FFmpeg peut fermer son entrée avant yt-dlp (skip, URL refusée, fin de
     // processus). Sans listener, Node transforme ce cas normal en crash EPIPE.
     ffmpeg.stdin.on('error', (error) => {
       if (error.code !== 'EPIPE' && this.current === track) this.#failCurrent(error, attempt);
     });
-    download.stdout.on('error', (error) => {
+    download?.stdout.on('error', (error) => {
       if (error.code !== 'EPIPE' && this.current === track) this.#failCurrent(error, attempt);
     });
-    download.stdout.pipe(ffmpeg.stdin);
-    download.on('error', (error) => this.#failCurrent(error, attempt));
+    download?.stdout.pipe(ffmpeg.stdin);
+    download?.on('error', (error) => this.#failCurrent(error, attempt));
     ffmpeg.on('error', (error) => this.#failCurrent(error, attempt));
-    download.on('close', (code) => {
+    download?.on('close', (code) => {
       if (code && this.current === track) this.#failCurrent(new Error(diagnostics.join('').trim() || `yt-dlp: code ${code}`), attempt);
     });
     const resource = createAudioResource(ffmpeg.stdout, { inputType: StreamType.Raw, inlineVolume: true, metadata: track });

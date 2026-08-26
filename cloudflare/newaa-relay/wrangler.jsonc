@@ -20,6 +20,9 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "inazuma-music-media" }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

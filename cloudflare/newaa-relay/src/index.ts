@@ -165,11 +165,31 @@ async function playlistsApi(request:Request,env:Env,url:URL):Promise<Response>{
   return json({error:'Méthode refusée'},405);
 }
 
+async function mediaApi(request:Request,env:Env,url:URL):Promise<Response>{
+  if(request.method==='PUT'){
+    if(!(await sameSecret(bearer(request),env.ACCESS_TOKEN)))return json({error:'Accès refusé'},401);
+    const size=Number(request.headers.get('content-length')||0);if(!size||size>30*1024*1024)return json({error:'MP3 invalide ou supérieur à 30 Mo.'},413);
+    if(request.headers.get('content-type')?.split(';')[0]!=='audio/mpeg'||!request.body)return json({error:'Seuls les fichiers MP3 sont acceptés.'},415);
+    const id=crypto.randomUUID();const key=`uploads/${id}.mp3`;const encoded=request.headers.get('x-file-name')||'musique.mp3';let title='musique';try{title=decodeURIComponent(encoded).replace(/\.mp3$/i,'').slice(0,120)||title}catch{}
+    await env.MEDIA.put(key,request.body,{httpMetadata:{contentType:'audio/mpeg',cacheControl:'private, max-age=86400'},customMetadata:{title,uploadedAt:String(Date.now())}});
+    return json({id,url:`${url.origin}/media/${id}`,title},201);
+  }
+  if(request.method==='GET'){
+    const id=url.pathname.slice('/media/'.length);if(!/^[0-9a-f-]{36}$/.test(id))return new Response('Introuvable',{status:404});
+    const object=await env.MEDIA.get(`uploads/${id}.mp3`,{range:request.headers});if(!object)return new Response('Introuvable',{status:404});
+    const headers=new Headers();object.writeHttpMetadata(headers);headers.set('etag',object.httpEtag);headers.set('accept-ranges','bytes');headers.set('cache-control','private, max-age=86400');
+    if(object.range&&'offset'in object.range){headers.set('content-range',`bytes ${object.range.offset}-${object.range.offset+object.range.length-1}/${object.size}`);headers.set('content-length',String(object.range.length));return new Response(object.body,{status:206,headers})}
+    headers.set('content-length',String(object.size));return new Response(object.body,{headers});
+  }
+  return json({error:'Méthode refusée'},405);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/health") return json({ ok: true, service: "Inazuma Music" });
     if (url.pathname === "/youtube/search" && request.method === "GET") return youtubeSearch(request, env);
+    if (url.pathname === '/media' || url.pathname.startsWith('/media/')) return mediaApi(request,env,url);
     if (url.pathname === "/playlists" || url.pathname.startsWith('/playlists/')) return playlistsApi(request,env,url);
     if (url.pathname === "/ws") return env.MUSIC_ROOM.getByName("newaa-main").fetch(request);
     return new Response("Introuvable", { status: 404 });

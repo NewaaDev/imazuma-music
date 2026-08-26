@@ -21,11 +21,12 @@ function durationSeconds(value) {
 
 function desktopTrack(track) {
   if (!track) return null;
-  return { id: track.id, title: track.title, channel: track.channel || 'YouTube', thumbnail: track.thumbnail || '', duration: durationLabel(track.duration), requestedBy: track.requestedBy || 'Desktop' };
+  return { id: track.id, title: track.title, channel: track.channel || 'YouTube', thumbnail: track.thumbnail || '', duration: durationLabel(track.duration), requestedBy: track.requestedBy || 'Desktop', source:track.source||'youtube', url:track.url };
 }
 
 function botTrack(track) {
-  if (!track?.id) throw new Error('Vidéo YouTube invalide.');
+  if (!track?.id) throw new Error('Morceau invalide.');
+  const mp3=track.source==='mp3'&&/^https:\/\//i.test(track.url||'');
   return {
     id: track.id,
     title: track.title || 'Vidéo YouTube',
@@ -33,7 +34,7 @@ function botTrack(track) {
     thumbnail: track.thumbnail || null,
     duration: durationSeconds(track.duration),
     requestedBy: 'Inazuma Music',
-    url: `https://www.youtube.com/watch?v=${track.id}`,
+    source:mp3?'mp3':'youtube',url:mp3?track.url:`https://www.youtube.com/watch?v=${track.id}`,
   };
 }
 
