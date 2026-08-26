@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('newaa', {
   publishPlaylist: (playlist: unknown) => ipcRenderer.invoke('playlists:publish', playlist),
   unpublishPlaylist: (id: string, shareKey: string) => ipcRenderer.invoke('playlists:unpublish', id, shareKey),
   loginDiscord: (clientId: string) => ipcRenderer.invoke('discord:login', clientId),
+  inviteBot: (clientId: string) => ipcRenderer.invoke('discord:invite', clientId),
   startBot: () => ipcRenderer.invoke('bot:start'), stopBot: () => ipcRenderer.invoke('bot:stop'),
   openExternal: (url: string) => ipcRenderer.invoke('external:open', url),
   getAppInfo: () => ipcRenderer.invoke('app:info'),

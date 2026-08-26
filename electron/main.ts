@@ -181,6 +181,7 @@ ipcMain.handle('discord:login', async (_e, clientId: string) => {
     const timeout=setTimeout(()=>done(new Error('La connexion Discord a expiré.')),120_000);
   });
 });
+ipcMain.handle('discord:invite',async(_e,clientId:string)=>{if(!/^\d{17,20}$/.test(clientId))throw new Error('Le bot doit être connecté une première fois.');const url=new URL('https://discord.com/oauth2/authorize');url.search=new URLSearchParams({client_id:clientId,scope:'bot applications.commands',permissions:'3165184'}).toString();await shell.openExternal(url.href)});
 ipcMain.handle('bot:start', () => {
   if (botProcess) return { ok: true, message: 'Le bot est déjà lancé.' };
   const c = getConfig(); if (!c.botCommand) throw new Error('Configure la commande de démarrage du bot.');
