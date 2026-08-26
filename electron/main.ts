@@ -137,6 +137,16 @@ ipcMain.handle('youtube:search', async (_e, query: string, pageToken = '') => {
   if (!response.ok) throw new Error(data.error || `Recherche YouTube indisponible (${response.status}).`);
   return data;
 });
+ipcMain.handle('lyrics:search', async (_e, title: string, artist = '') => {
+  const endpoint = new URL('https://lrclib.net/api/search');
+  endpoint.searchParams.set('track_name', String(title || '').slice(0, 160));
+  if (artist) endpoint.searchParams.set('artist_name', String(artist).slice(0, 120));
+  const response = await fetch(endpoint, { headers: { 'user-agent': `Inazuma Music/${app.getVersion()} (desktop lyrics)` } });
+  if (!response.ok) throw new Error(`Paroles indisponibles (${response.status}).`);
+  const records = await response.json() as Array<{trackName?:string;artistName?:string;duration?:number;syncedLyrics?:string|null;plainLyrics?:string|null;instrumental?:boolean}>;
+  const record = records.find((item) => item.syncedLyrics) || records.find((item) => item.plainLyrics) || null;
+  return record ? { trackName: record.trackName || title, artistName: record.artistName || artist, duration: record.duration || 0, syncedLyrics: record.syncedLyrics || '', plainLyrics: record.plainLyrics || '', instrumental: Boolean(record.instrumental) } : null;
+});
 function relayEndpoint(pathname:string){const config=getConfig();if(!config.apiToken||!config.wsUrl)throw new Error('Connexion Inazuma indisponible.');const endpoint=new URL(config.wsUrl.replace(/^wss:/,'https:').replace(/^ws:/,'http:'));endpoint.pathname=pathname;endpoint.search='';return{endpoint,config}}
 ipcMain.handle('playlists:public',async(_e,query='')=>{const{endpoint,config}=relayEndpoint('/playlists');endpoint.searchParams.set('q',String(query).slice(0,80));const response=await fetch(endpoint,{headers:{authorization:`Bearer ${config.apiToken}`}});const data=await response.json() as {items?:unknown[];error?:string};if(!response.ok)throw new Error(data.error||'Playlists publiques indisponibles.');return data.items||[]});
 ipcMain.handle('playlists:publish',async(_e,playlist)=>{const{endpoint,config}=relayEndpoint('/playlists');const response=await fetch(endpoint,{method:'PUT',headers:{authorization:`Bearer ${config.apiToken}`,'content-type':'application/json'},body:JSON.stringify({...playlist,ownerName:config.discordUserName||'Utilisateur',ownerAvatar:config.discordAvatar||''})});const data=await response.json() as {error?:string};if(!response.ok)throw new Error(data.error||'Publication impossible.');});

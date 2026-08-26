@@ -257,7 +257,7 @@
 .track-actions .pinned { color: #ffc45d; }
 .mini-toggle { width: 100%; height: 40px; margin-top: 9px; border: 1px solid #43334f; border-radius: 10px; background: #17121d; color: #c4b9cb; font-size: 10px; }
 .mini-toggle svg { width: 14px; vertical-align: middle; }
-.mini-window { width: 100vw; height: 100vh; overflow: hidden; background: #100d14; }
+.mini-window { width: 100vw; height: 100vh; overflow: hidden; background: #100d14; -webkit-app-region: drag; user-select: none; }
 .mini-window footer { display: grid; grid-template-columns: minmax(130px,1fr) 86px 112px; width: 100%; height: 100%; padding: 0 14px; border: 0; }
 .mini-window .mini-track img,.mini-window .mini-empty { width: 46px; height: 46px; }
 .mini-window .timeline { display: none; }
@@ -265,6 +265,7 @@
 .mini-window .sleep-timer { display: none; }
 .mini-window .volume { gap: 5px; }
 .mini-window .volume input { width: 54px; }
+.mini-window button,.mini-window input,.mini-window select,.mini-window label { -webkit-app-region: no-drag; }
 .audio-settings { margin: 18px 0 8px; padding: 16px; border: 1px solid #30273a; border-radius: 13px; background: #100d15; }
 .audio-settings .subhead { margin-bottom: 10px; }
 .sleep-timer { display: flex; align-items: center; gap: 3px; margin-right: 5px; color: #8e8298; }
@@ -279,5 +280,18 @@
 :root[data-theme="ember"] aside,:root[data-theme="ember"] footer { background: rgba(15,9,7,.94); }
 :root[data-theme="ember"] nav button.active { background: linear-gradient(90deg,#c754283d,#ff9a2d0c); }
 :root[data-theme="ember"] nav button.active:before { background:#ff8a3d;box-shadow:0 0 14px #ff8a3d; }
+.lyrics-page { display: flex; min-height: 100%; flex-direction: column; overflow: hidden; }
+.lyrics-head { display: grid; grid-template-columns: 78px 1fr auto; align-items: center; gap: 15px; padding-bottom: 18px; border-bottom: 1px solid #2a2231; }
+.lyrics-head img { width: 78px; height: 58px; border-radius: 10px; object-fit: cover; }
+.lyrics-head div { display: flex; min-width: 0; flex-direction: column; }
+.lyrics-head small { color: #a84ff1; font-size: 8px; font-weight: 800; letter-spacing: 1.5px; }
+.lyrics-head h2 { margin: 5px 0 2px; overflow: hidden; font: 700 18px 'Space Grotesk'; text-overflow: ellipsis; white-space: nowrap; }
+.lyrics-head p { margin: 0; color: #817888; font-size: 10px; }
+.lyrics-head>span { padding: 6px 9px; border: 1px solid #49335a; border-radius: 999px; color: #bd85e8; font-size: 8px; }
+.synced-lyrics { flex: 1; max-height: calc(100vh - 390px); overflow: auto; padding: 70px 25px; scroll-behavior: smooth; text-align: center; }
+.synced-lyrics p { margin: 0; padding: 10px 0; color: #62596a; font: 600 20px 'Space Grotesk'; line-height: 1.35; transition: .25s; }
+.synced-lyrics p.past { color: #8c8194; }
+.synced-lyrics p.active { color: #fff; font-size: 27px; text-shadow: 0 0 25px #a64eff99; }
+.plain-lyrics { overflow: auto; padding: 30px; color: #d0c6d6; font-size: 14px; line-height: 1.9; white-space: pre-wrap; }
 
 .playlist-page{display:flex;flex-direction:column;gap:18px}.playlist-page .playlists-layout{min-height:520px}.playlist-actions .privacy{border-color:#4c3c58;color:#bfb5c8}.playlist-actions .privacy.public{border-color:#3f815c;color:#67e49a;background:#183123}.community{min-height:300px}.community .section-title form{display:flex;align-items:center;gap:8px;border:1px solid #342b3e;background:#0f0c13;border-radius:10px;padding:0 8px}.community .section-title form svg{width:15px;color:#9550d9}.community .section-title input{width:250px;height:36px;border:0;outline:0;background:transparent;color:white}.community .section-title form button{height:30px;border:0;border-radius:7px;background:#7134ca;color:white;padding:0 10px}.community-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}.community-card{padding:15px;border:1px solid #30283a;border-radius:13px;background:#100d15}.community-card>div:first-child{display:flex;align-items:center;gap:10px}.community-card img,.community-card>div:first-child>svg{width:39px;height:39px;border-radius:10px;object-fit:cover;color:#a851ef}.community-card span{display:flex;flex-direction:column;min-width:0}.community-card small{font-size:8px;color:#83748e;letter-spacing:1px}.community-card b{margin-top:3px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.community-card p{font-size:10px;color:#766c7c}.community-card>div:last-child{display:flex;gap:7px}.community-card button{height:32px;border:1px solid #3d3147;background:#1b1521;color:#c7bdcf;border-radius:8px;padding:0 10px;font-size:9px;display:flex;align-items:center;gap:5px}.community-card button svg{width:13px}

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('newaa', {
   getLibrary: () => ipcRenderer.invoke('library:get'),
   saveLibrary: (library: unknown) => ipcRenderer.invoke('library:set', library),
   searchYouTube: (query: string, pageToken?: string) => ipcRenderer.invoke('youtube:search', query, pageToken),
+  searchLyrics: (title: string, artist?: string) => ipcRenderer.invoke('lyrics:search', title, artist),
   getPublicPlaylists: (query?: string) => ipcRenderer.invoke('playlists:public', query),
   publishPlaylist: (playlist: unknown) => ipcRenderer.invoke('playlists:publish', playlist),
   unpublishPlaylist: (id: string, shareKey: string) => ipcRenderer.invoke('playlists:unpublish', id, shareKey),
