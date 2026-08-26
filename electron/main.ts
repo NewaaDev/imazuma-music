@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, Notification, safeStorage, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -9,7 +9,7 @@ import DiscordRPC from 'discord-rpc';
 
 app.setName('Inazuma Music');
 
-type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; discordClientId: string; discordUserId: string; discordUserName: string; discordAvatar: string; preferredGuildId: string; preferredTextChannelId: string; autoJoin: boolean; autoLeave: boolean; presenceEnabled: boolean; presenceDetails: string; presenceLinkLabel: string; presenceLinkUrl: string; presenceDownloadLabel: string; presenceDownloadUrl: string };
+type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; theme:'inazuma'|'midnight'|'ember'; discordClientId: string; discordUserId: string; discordUserName: string; discordAvatar: string; preferredGuildId: string; preferredTextChannelId: string; autoJoin: boolean; autoLeave: boolean; controlMode:'private'|'shared'; allowedRoleIds:string; audioPreset:'normal'|'bass'|'vocal'|'night'; normalizeVolume:boolean; crossfadeSeconds:number; presenceEnabled: boolean; presenceDetails: string; presenceLinkLabel: string; presenceLinkUrl: string; presenceDownloadLabel: string; presenceDownloadUrl: string };
 function bundledRemote(): Partial<Config> {
   try {
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets/remote-config.json'), 'utf8'));
@@ -18,9 +18,10 @@ function bundledRemote(): Partial<Config> {
   } catch { return {}; }
 }
 const remote = bundledRemote();
-const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, discordClientId: '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, presenceEnabled: true, presenceDetails: 'En écoute sur Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: '' };
+const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', discordClientId: '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds: '', audioPreset: 'normal', normalizeVolume: true, crossfadeSeconds: 3, presenceEnabled: true, presenceDetails: 'En écoute sur Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: '' };
 let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
+let miniWindow: BrowserWindow | null = null;
 let discordRpc: DiscordRPC.Client | null = null;
 
 function validPresenceButton(label: string, url: string) {
@@ -62,8 +63,9 @@ function writeStore(value: Record<string, unknown>) {
   fs.writeFileSync(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(value, null, 2), { mode: 0o600 });
 }
 const libraryFile=()=>path.join(app.getPath('userData'),'library.json');
-function getLibrary(){try{const x=JSON.parse(fs.readFileSync(libraryFile(),'utf8'));return{history:Array.isArray(x.history)?x.history.slice(0,200):[],playlists:Array.isArray(x.playlists)?x.playlists:[]}}catch{return{history:[],playlists:[]}}}
-function saveLibrary(value:any){const clean={history:Array.isArray(value?.history)?value.history.slice(0,200):[],playlists:Array.isArray(value?.playlists)?value.playlists.map((p:any)=>({id:String(p.id),name:String(p.name).slice(0,80),createdAt:Number(p.createdAt)||Date.now(),tracks:Array.isArray(p.tracks)?p.tracks.slice(0,500):[]})):[]};fs.mkdirSync(app.getPath('userData'),{recursive:true});fs.writeFileSync(libraryFile(),JSON.stringify(clean,null,2));return clean}
+const emptyStats=()=>({totalSeconds:0,tracksPlayed:0,playCount:{},lastPlayedAt:0});
+function getLibrary(){try{const x=JSON.parse(fs.readFileSync(libraryFile(),'utf8'));return{history:Array.isArray(x.history)?x.history.slice(0,200):[],playlists:Array.isArray(x.playlists)?x.playlists:[],favorites:Array.isArray(x.favorites)?x.favorites.slice(0,500):[],pinned:Array.isArray(x.pinned)?x.pinned.slice(0,100):[],stats:{...emptyStats(),...(x.stats||{})}}}catch{return{history:[],playlists:[],favorites:[],pinned:[],stats:emptyStats()}}}
+function saveLibrary(value:any){const clean={history:Array.isArray(value?.history)?value.history.slice(0,200):[],playlists:Array.isArray(value?.playlists)?value.playlists.map((p:any)=>({id:String(p.id),name:String(p.name).slice(0,80),createdAt:Number(p.createdAt)||Date.now(),tracks:Array.isArray(p.tracks)?p.tracks.slice(0,500):[]})):[],favorites:Array.isArray(value?.favorites)?value.favorites.slice(0,500):[],pinned:Array.isArray(value?.pinned)?value.pinned.slice(0,100):[],stats:{...emptyStats(),...(value?.stats||{})}};fs.mkdirSync(app.getPath('userData'),{recursive:true});fs.writeFileSync(libraryFile(),JSON.stringify(clean,null,2));return clean}
 
 function protect(value: string) {
   if (!value) return '';
@@ -94,6 +96,21 @@ function createWindow() {
   mainWindow = new BrowserWindow({ width: 1440, height: 900, minWidth: 1080, minHeight: 680, icon: path.join(__dirname, '../assets/icon.png'), backgroundColor: '#08070c', titleBarStyle: 'hidden', titleBarOverlay: { color: '#08070c', symbolColor: '#c9c2d8', height: 42 }, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
   const dev = process.env.VITE_DEV_SERVER_URL;
   dev ? mainWindow.loadURL(dev) : mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+}
+function toggleMiniPlayer() {
+  if (miniWindow && !miniWindow.isDestroyed()) { miniWindow.close(); miniWindow = null; return false; }
+  miniWindow = new BrowserWindow({ width: 420, height: 138, minWidth: 380, minHeight: 120, maxHeight: 180, alwaysOnTop: true, frame: false, resizable: true, backgroundColor: '#100d14', icon: path.join(__dirname, '../assets/icon.png'), webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
+  const dev = process.env.VITE_DEV_SERVER_URL;
+  dev ? miniWindow.loadURL(`${dev}?mini=1`) : miniWindow.loadFile(path.join(__dirname, '../dist/index.html'), { query: { mini: '1' } });
+  miniWindow.on('closed', () => { miniWindow = null; });
+  return true;
+}
+function registerMediaShortcuts() {
+  const commands = new Map([['MediaPlayPause','toggle_pause'],['MediaNextTrack','skip'],['MediaStop','stop']]);
+  for (const [accelerator, action] of commands) globalShortcut.register(accelerator, () => {
+    mainWindow?.webContents.send('media:command', action);
+    miniWindow?.webContents.send('media:command', action);
+  });
 }
 function setupUpdates(){if(!app.isPackaged)return;autoUpdater.autoDownload=true;autoUpdater.autoInstallOnAppQuit=true;autoUpdater.on('checking-for-update',()=>mainWindow?.webContents.send('update:status',{state:'checking'}));autoUpdater.on('update-available',x=>mainWindow?.webContents.send('update:status',{state:'downloading',version:x.version}));autoUpdater.on('download-progress',x=>mainWindow?.webContents.send('update:status',{state:'progress',percent:Math.round(x.percent)}));autoUpdater.on('update-downloaded',x=>{mainWindow?.webContents.send('update:status',{state:'ready',version:x.version});setTimeout(()=>autoUpdater.quitAndInstall(false,true),2500)});autoUpdater.on('error',()=>mainWindow?.webContents.send('update:status',{state:'error'}));setTimeout(()=>autoUpdater.checkForUpdates().catch(()=>{}),5000)}
 
@@ -167,6 +184,11 @@ ipcMain.handle('bot:stop', () => { if (!botProcess) return { ok: true, message: 
 ipcMain.handle('external:open', (_e, url: string) => { if (/^https:\/\/(www\.)?youtube\.com\//.test(url)) return shell.openExternal(url); });
 ipcMain.handle('app:info', () => ({ name: app.getName(), version: app.getVersion() }));
 ipcMain.handle('app:quit', () => app.quit());
+ipcMain.handle('mini:toggle', () => toggleMiniPlayer());
+ipcMain.handle('notification:track', (_e, track: {title?:string;channel?:string}) => {
+  if (!Notification.isSupported() || !track?.title) return;
+  new Notification({ title: 'Inazuma Music', body: `${track.title}\n${track.channel || ''}`, icon: path.join(__dirname, '../assets/icon.png'), silent: true }).show();
+});
 app.whenReady().then(() => {
   const bootstrapKey = process.env.NEWAA_YOUTUBE_API_KEY;
   if (bootstrapKey) {
@@ -176,7 +198,8 @@ app.whenReady().then(() => {
     app.quit();
     return;
   }
-  createWindow();setupUpdates();void setupRichPresence(getConfig());
+  createWindow();setupUpdates();registerMediaShortcuts();void setupRichPresence(getConfig());
 });
 app.on('window-all-closed', () => { discordRpc?.destroy().catch(() => {}); if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+app.on('will-quit', () => globalShortcut.unregisterAll());

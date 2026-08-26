@@ -42,6 +42,7 @@ export function createDesktopBridge(client, music) {
   const authenticated = new WeakSet();
   const contexts = new WeakMap();
   const trackedUsers = new Map();
+  const controlPolicies = new Map();
   let selectedGuildId = config.guildId && client.guilds.cache.has(config.guildId) ? config.guildId : client.guilds.cache.firstKey();
   let lastContext = {};
 
@@ -84,11 +85,12 @@ export function createDesktopBridge(client, music) {
     const elapsed = Math.floor((player?.seekOffset || 0) + (player?.player?.state?.resource?.playbackDuration || 0) / 1000);
     const total = durationSeconds(player?.current?.duration);
     return {
-      botOnline: client.isReady(), discordClientId: client.application?.id || client.user?.id || '', userName: member?.displayName || user?.globalName || user?.username || '', userAvatar: user?.displayAvatarURL({ extension: 'png', size: 128 }) || '', guildId: targetGuild?.id || '', guildName: targetGuild?.name || 'Aucun serveur',
+      botOnline: client.isReady(), latencyMs: Math.max(0, Math.round(client.ws.ping || 0)), discordClientId: client.application?.id || client.user?.id || '', userName: member?.displayName || user?.globalName || user?.username || '', userAvatar: user?.displayAvatarURL({ extension: 'png', size: 128 }) || '', guildId: targetGuild?.id || '', guildName: targetGuild?.name || 'Aucun serveur',
       guilds: client.guilds.cache.map((item) => ({ id: item.id, name: item.name, icon: item.iconURL({ extension: 'png', size: 64 }) || '' })),
       textChannels: targetGuild?.channels.cache.filter((item) => item.isTextBased?.() && item.isSendable?.() && !item.isThread?.()).map((item) => ({ id: item.id, name: item.name })) || [],
       voiceChannel: channel?.name || 'Aucun salon', voiceMembers,
       playing: player?.player?.state?.status === AudioPlayerStatus.Playing, volume: player?.volume ?? config.defaultVolume,
+      audioPreset: player?.audioPreset || 'normal', normalizeVolume: player?.normalizeVolume ?? true, crossfadeSeconds: player?.crossfadeSeconds ?? 3,
       position: total > 0 ? Math.min(100, (elapsed / total) * 100) : 0, elapsed,
       current: desktopTrack(player?.current), queue: (player?.queue || []).map(desktopTrack), history: [],
     };
@@ -105,6 +107,7 @@ export function createDesktopBridge(client, music) {
     if (!channel.joinable || !channel.speakable) throw new Error('Le bot n’a pas la permission de rejoindre/parler dans ce salon.');
     const player = music.getOrCreate(targetGuild.id);
     await player.connect(channel, textChannel(targetGuild, context));
+    player.setAudioSettings({ preset: context.audioPreset, normalize: context.normalizeVolume, crossfadeSeconds: context.crossfadeSeconds });
     return player;
   }
 
@@ -123,9 +126,21 @@ export function createDesktopBridge(client, music) {
     }
     const targetGuild = guild();
     const userId = String(context.discordUserId || '').trim();
-    if (userId && targetGuild) await targetGuild.members.fetch(userId).catch(() => null);
+    const member = userId && targetGuild ? await targetGuild.members.fetch(userId).catch(() => null) : null;
     let player = targetGuild ? music.get(targetGuild.id) : null;
     if (action === 'get_state') return;
+    if (!member) throw new Error('Connecte ton compte Discord pour contrôler cette session.');
+    let policy = controlPolicies.get(targetGuild.id);
+    if (!policy) {
+      policy = { ownerId: userId, mode: context.controlMode === 'shared' ? 'shared' : 'private', roleIds: String(context.allowedRoleIds || '').split(',').map((id) => id.trim()).filter(Boolean) };
+      controlPolicies.set(targetGuild.id, policy);
+    }
+    const sharedRole = policy.mode === 'shared' && policy.roleIds.some((roleId) => member.roles.cache.has(roleId));
+    if (policy.ownerId !== userId && !sharedRole) throw new Error('Cette session est privée ou ton rôle ne permet pas de la contrôler.');
+    if (policy.ownerId === userId) {
+      policy.mode = context.controlMode === 'shared' ? 'shared' : 'private';
+      policy.roleIds = String(context.allowedRoleIds || '').split(',').map((id) => id.trim()).filter(Boolean);
+    }
     if (['play_now', 'play_next', 'enqueue'].includes(action)) player = await connectedPlayer(context);
     if (!player && !['volume'].includes(action)) throw new Error('Aucun lecteur actif.');
     if (action === 'play_now') { player.stopping = false; player.queue = []; player.skip(); player.enqueue(botTrack(payload)); }
@@ -135,6 +150,7 @@ export function createDesktopBridge(client, music) {
     else if (action === 'skip') player.skip();
     else if (action === 'stop') player.stop();
     else if (action === 'volume') { if (!player) player = await connectedPlayer(context); player.setVolume(Math.max(0, Math.min(100, Number(payload)))); }
+    else if (action === 'audio_settings') { if (!player) player = await connectedPlayer(context); player.setAudioSettings(payload || {}); }
     else if (action === 'seek') player.seek(Number(payload));
     else if (action === 'remove_queue') player.queue.splice(Number(payload), 1);
     else if (action === 'clear_queue') player.queue = [];

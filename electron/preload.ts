@@ -12,7 +12,10 @@ contextBridge.exposeInMainWorld('newaa', {
   startBot: () => ipcRenderer.invoke('bot:start'), stopBot: () => ipcRenderer.invoke('bot:stop'),
   openExternal: (url: string) => ipcRenderer.invoke('external:open', url),
   getAppInfo: () => ipcRenderer.invoke('app:info'),
+  toggleMiniPlayer: () => ipcRenderer.invoke('mini:toggle'),
+  notifyTrack: (track: unknown) => ipcRenderer.invoke('notification:track', track),
   quitApp: () => ipcRenderer.invoke('app:quit'),
   onBotLog: (cb: (line: string) => void) => { const f = (_: unknown, line: string) => cb(line); ipcRenderer.on('bot:log', f); return () => ipcRenderer.removeListener('bot:log', f); },
-  onUpdate: (cb: (event: unknown) => void) => { const f = (_: unknown, event: unknown) => cb(event); ipcRenderer.on('update:status', f); return () => ipcRenderer.removeListener('update:status', f); }
+  onUpdate: (cb: (event: unknown) => void) => { const f = (_: unknown, event: unknown) => cb(event); ipcRenderer.on('update:status', f); return () => ipcRenderer.removeListener('update:status', f); },
+  onMediaCommand: (cb: (action: string) => void) => { const f = (_: unknown, action: string) => cb(action); ipcRenderer.on('media:command', f); return () => ipcRenderer.removeListener('media:command', f); }
 });

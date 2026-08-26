@@ -25,6 +25,9 @@ class GuildPlayer extends EventEmitter {
     this.current = null;
     this.loop = 'off';
     this.volume = config.defaultVolume;
+    this.audioPreset = 'normal';
+    this.normalizeVolume = true;
+    this.crossfadeSeconds = 3;
     this.connection = null;
     this.voiceChannel = null;
     this.textChannel = null;
@@ -93,6 +96,26 @@ class GuildPlayer extends EventEmitter {
     this.player.state.resource?.volume?.setVolume(value / 100);
   }
 
+  setAudioSettings(value = {}) {
+    this.audioPreset = ['normal', 'bass', 'vocal', 'night'].includes(value.preset) ? value.preset : 'normal';
+    this.normalizeVolume = value.normalize !== false;
+    this.crossfadeSeconds = Math.max(0, Math.min(10, Number(value.crossfadeSeconds) || 0));
+  }
+
+  #audioFilter(track) {
+    const filters = [];
+    if (this.normalizeVolume) filters.push('loudnorm=I=-16:TP=-1.5:LRA=11');
+    if (this.audioPreset === 'bass') filters.push('bass=g=7:f=110:w=0.6');
+    if (this.audioPreset === 'vocal') filters.push('equalizer=f=2500:t=q:w=1.2:g=4,equalizer=f=180:t=q:w=1:g=-2');
+    if (this.audioPreset === 'night') filters.push('acompressor=threshold=-20dB:ratio=4:attack=20:release=250,volume=0.78');
+    if (this.crossfadeSeconds > 0) {
+      filters.push(`afade=t=in:st=0:d=${this.crossfadeSeconds}`);
+      const outAt = Math.max(0, Number(track.duration || 0) - this.crossfadeSeconds);
+      if (outAt > 0) filters.push(`afade=t=out:st=${outAt}:d=${this.crossfadeSeconds}`);
+    }
+    return filters.join(',');
+  }
+
   seek(value) {
     if (!this.current) throw new Error('Aucune musique n’est en cours.');
     const total = Number(this.current.duration) || 0;
@@ -122,9 +145,11 @@ class GuildPlayer extends EventEmitter {
     this.recentTrackIds = [...this.recentTrackIds.filter((id) => id !== track.id), track.id].slice(-50);
     this.#killProcesses();
     const download = createDownload(track);
+    const audioFilter = this.#audioFilter(track);
     const ffmpeg = spawn(ffmpegPath, [
       '-hide_banner', '-loglevel', 'error', '-i', 'pipe:0',
       ...(startAt > 0 ? ['-ss', String(startAt)] : []),
+      ...(audioFilter ? ['-af', audioFilter] : []),
       '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1',
     ], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     this.processes = [download, ffmpeg];
