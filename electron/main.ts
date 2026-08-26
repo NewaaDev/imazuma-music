@@ -9,7 +9,7 @@ import DiscordRPC from 'discord-rpc';
 
 app.setName('Inazuma Music');
 
-type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; theme:'inazuma'|'midnight'|'ember'; discordClientId: string; discordUserId: string; discordUserName: string; discordAvatar: string; preferredGuildId: string; preferredTextChannelId: string; autoJoin: boolean; autoLeave: boolean; controlMode:'private'|'shared'; allowedRoleIds:string; audioPreset:'normal'|'bass'|'vocal'|'night'; normalizeVolume:boolean; crossfadeSeconds:number; presenceEnabled: boolean; presenceShowTrack:boolean; presenceDetails: string; presenceState:string; presenceLargeImageKey:string; presenceLargeImageText:string; presenceLinkLabel: string; presenceLinkUrl: string; presenceDownloadLabel: string; presenceDownloadUrl: string };
+type Config = { wsUrl: string; apiToken: string; youtubeApiKey: string; botCommand: string; botCwd: string; demoMode: boolean; theme:'inazuma'|'midnight'|'ember'; discordClientId: string; discordUserId: string; discordUserName: string; discordAvatar: string; preferredGuildId: string; preferredTextChannelId: string; autoJoin: boolean; autoLeave: boolean; controlMode:'private'|'shared'; allowedRoleIds:string; audioPreset:'normal'|'bass'|'vocal'|'night'; normalizeVolume:boolean; crossfadeSeconds:number; presenceEnabled: boolean; presenceType:'playing'|'listening'|'watching'|'competing'; presenceShowTrack:boolean; presenceDetails: string; presenceState:string; presenceLargeImageKey:string; presenceLargeImageText:string; presenceLinkLabel: string; presenceLinkUrl: string; presenceDownloadLabel: string; presenceDownloadUrl: string };
 function bundledRemote(): Partial<Config> {
   try {
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../assets/remote-config.json'), 'utf8'));
@@ -18,7 +18,7 @@ function bundledRemote(): Partial<Config> {
   } catch { return {}; }
 }
 const remote = bundledRemote();
-const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', discordClientId: '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds: '', audioPreset: 'normal', normalizeVolume: true, crossfadeSeconds: 3, presenceEnabled: true, presenceShowTrack:true, presenceDetails: 'En écoute sur Inazuma Music', presenceState:'Version 2.0 • BÊTA', presenceLargeImageKey:'inazuma_music_logo', presenceLargeImageText:'Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: '' };
+const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: remote.apiToken || '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', discordClientId: '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds: '', audioPreset: 'normal', normalizeVolume: true, crossfadeSeconds: 3, presenceEnabled: true, presenceType:'listening', presenceShowTrack:true, presenceDetails: 'En écoute sur Inazuma Music', presenceState:'Version 2.0 • BÊTA', presenceLargeImageKey:'inazuma_music_logo', presenceLargeImageText:'Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: '' };
 let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
@@ -42,14 +42,9 @@ async function setupRichPresence(config: Config) {
       validPresenceButton(config.presenceLinkLabel, config.presenceLinkUrl),
       validPresenceButton(config.presenceDownloadLabel, config.presenceDownloadUrl),
     ].filter((button): button is {label:string;url:string} => Boolean(button));
-    await rpc.setActivity({
-      details: (config.presenceShowTrack&&presenceTrack?.title ? presenceTrack.title : config.presenceDetails || 'En écoute sur Inazuma Music').trim().slice(0, 128),
-      state: (config.presenceShowTrack&&presenceTrack ? `${presencePlaying?'En lecture':'En pause'} • ${presenceTrack.channel||'Inazuma Music'}` : config.presenceState || 'Version 2.0 • BÊTA').trim().slice(0,128),
-      largeImageKey: config.presenceLargeImageKey.trim().slice(0,128) || 'inazuma_music_logo',
-      largeImageText: config.presenceLargeImageText.trim().slice(0,128) || 'Inazuma Music',
-      buttons: buttons.length ? buttons : undefined,
-      instance: false,
-    });
+    const activityTypes={playing:0,listening:2,watching:3,competing:5} as const;
+    const activity={type:activityTypes[config.presenceType]??2,details:(config.presenceShowTrack&&presenceTrack?.title?presenceTrack.title:config.presenceDetails||'En écoute sur Inazuma Music').trim().slice(0,128),state:(config.presenceShowTrack&&presenceTrack?`${presencePlaying?'En lecture':'En pause'} • ${presenceTrack.channel||'Inazuma Music'}`:config.presenceState||'Version 2.0 • BÊTA').trim().slice(0,128),assets:{large_image:config.presenceLargeImageKey.trim().slice(0,128)||'inazuma_music_logo',large_text:config.presenceLargeImageText.trim().slice(0,128)||'Inazuma Music'},buttons:buttons.length?buttons:undefined,instance:false};
+    await (rpc as unknown as {request:(command:string,args:unknown)=>Promise<unknown>}).request('SET_ACTIVITY',{pid:process.pid,activity});
   } catch (error) {
     console.error('[Inazuma Music] Rich Presence indisponible:', error instanceof Error ? error.message : String(error));
     if (discordRpc === rpc) discordRpc = null;
