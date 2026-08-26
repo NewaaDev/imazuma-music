@@ -83,6 +83,10 @@ ipcMain.handle('youtube:search', async (_e, query: string, pageToken = '') => {
   if (!response.ok) throw new Error(data.error || `Recherche YouTube indisponible (${response.status}).`);
   return data;
 });
+function relayEndpoint(pathname:string){const config=getConfig();if(!config.apiToken||!config.wsUrl)throw new Error('Connexion Inazuma indisponible.');const endpoint=new URL(config.wsUrl.replace(/^wss:/,'https:').replace(/^ws:/,'http:'));endpoint.pathname=pathname;endpoint.search='';return{endpoint,config}}
+ipcMain.handle('playlists:public',async(_e,query='')=>{const{endpoint,config}=relayEndpoint('/playlists');endpoint.searchParams.set('q',String(query).slice(0,80));const response=await fetch(endpoint,{headers:{authorization:`Bearer ${config.apiToken}`}});const data=await response.json() as {items?:unknown[];error?:string};if(!response.ok)throw new Error(data.error||'Playlists publiques indisponibles.');return data.items||[]});
+ipcMain.handle('playlists:publish',async(_e,playlist)=>{const{endpoint,config}=relayEndpoint('/playlists');const response=await fetch(endpoint,{method:'PUT',headers:{authorization:`Bearer ${config.apiToken}`,'content-type':'application/json'},body:JSON.stringify({...playlist,ownerName:config.discordUserName||'Utilisateur',ownerAvatar:config.discordAvatar||''})});const data=await response.json() as {error?:string};if(!response.ok)throw new Error(data.error||'Publication impossible.');});
+ipcMain.handle('playlists:unpublish',async(_e,id,shareKey)=>{const{endpoint,config}=relayEndpoint(`/playlists/${encodeURIComponent(String(id))}`);const response=await fetch(endpoint,{method:'DELETE',headers:{authorization:`Bearer ${config.apiToken}`,'content-type':'application/json'},body:JSON.stringify({shareKey})});const data=await response.json() as {error?:string};if(!response.ok)throw new Error(data.error||'Retrait impossible.');});
 ipcMain.handle('discord:login', async (_e, clientId: string) => {
   if (!/^\d{17,20}$/.test(clientId)) throw new Error('Application Discord indisponible.');
   const redirectUri = 'http://127.0.0.1:53682/callback';

@@ -12,6 +12,14 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["MusicRoom"] }
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "inazuma-playlists",
+      "database_id": "d430d39e-376f-47ec-be3f-d5d7b154f515",
+      "migrations_dir": "migrations"
+    }
+  ],
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1

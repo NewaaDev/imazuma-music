@@ -142,11 +142,35 @@ async function youtubeSearch(request: Request, env: Env): Promise<Response> {
   });
 }
 
+async function hash(value:string):Promise<string>{const data=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));return Array.from(new Uint8Array(data),x=>x.toString(16).padStart(2,'0')).join('')}
+type PublicPlaylistRow={id:string;owner_name:string;owner_avatar:string;name:string;tracks_json:string;updated_at:number};
+function playlistRow(row:PublicPlaylistRow){let tracks:unknown[]=[];try{const parsed=JSON.parse(row.tracks_json);if(Array.isArray(parsed))tracks=parsed}catch{}return{id:row.id,name:row.name,createdAt:row.updated_at,tracks,visibility:'public',ownerName:row.owner_name,ownerAvatar:row.owner_avatar}}
+async function playlistsApi(request:Request,env:Env,url:URL):Promise<Response>{
+  if(!(await sameSecret(bearer(request),env.ACCESS_TOKEN)))return json({error:'Accès refusé'},401);
+  if(request.method==='GET'){
+    const q=`%${(url.searchParams.get('q')||'').trim().slice(0,80)}%`;
+    const result=await env.DB.prepare('SELECT id,owner_name,owner_avatar,name,tracks_json,updated_at FROM public_playlists WHERE name LIKE ? OR owner_name LIKE ? ORDER BY updated_at DESC LIMIT 60').bind(q,q).all<PublicPlaylistRow>();
+    return json({items:(result.results||[]).map(playlistRow)});
+  }
+  if(request.method==='PUT'){
+    const body=await request.json<Record<string,unknown>>().catch(()=>null);if(!body)return json({error:'Données invalides'},400);
+    const id=String(body.id||'').slice(0,100),name=String(body.name||'').trim().slice(0,80),ownerName=String(body.ownerName||'Utilisateur').trim().slice(0,80),ownerAvatar=String(body.ownerAvatar||'').slice(0,500),shareKey=String(body.shareKey||'').slice(0,200),tracks=Array.isArray(body.tracks)?body.tracks.slice(0,500):[];
+    if(!id||!name||shareKey.length<12)return json({error:'Playlist incomplète'},400);const keyHash=await hash(shareKey);const existing=await env.DB.prepare('SELECT edit_key_hash FROM public_playlists WHERE id=?').bind(id).first<{edit_key_hash:string}>();if(existing&&existing.edit_key_hash!==keyHash)return json({error:'Cette playlist appartient à un autre utilisateur.'},403);
+    const tracksJson=JSON.stringify(tracks);if(tracksJson.length>500_000)return json({error:'Playlist trop volumineuse.'},413);
+    await env.DB.prepare('INSERT INTO public_playlists(id,owner_name,owner_avatar,name,tracks_json,edit_key_hash,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET owner_name=excluded.owner_name,owner_avatar=excluded.owner_avatar,name=excluded.name,tracks_json=excluded.tracks_json,updated_at=excluded.updated_at').bind(id,ownerName,ownerAvatar,name,tracksJson,keyHash,Date.now()).run();return json({ok:true});
+  }
+  if(request.method==='DELETE'){
+    const id=decodeURIComponent(url.pathname.slice('/playlists/'.length)).slice(0,100);const body=await request.json<{shareKey?:string}>().catch(()=>({}));const keyHash=await hash(String(body.shareKey||''));const existing=await env.DB.prepare('SELECT edit_key_hash FROM public_playlists WHERE id=?').bind(id).first<{edit_key_hash:string}>();if(!existing)return json({ok:true});if(existing.edit_key_hash!==keyHash)return json({error:'Suppression refusée.'},403);await env.DB.prepare('DELETE FROM public_playlists WHERE id=?').bind(id).run();return json({ok:true});
+  }
+  return json({error:'Méthode refusée'},405);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/health") return json({ ok: true, service: "NEWAA Music" });
     if (url.pathname === "/youtube/search" && request.method === "GET") return youtubeSearch(request, env);
+    if (url.pathname === "/playlists" || url.pathname.startsWith('/playlists/')) return playlistsApi(request,env,url);
     if (url.pathname === "/ws") return env.MUSIC_ROOM.getByName("newaa-main").fetch(request);
     return new Response("Introuvable", { status: 404 });
   },

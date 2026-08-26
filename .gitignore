@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-electron/
 release/
+.wrangler/
 *.log
 .env
 assets/remote-config.json
