@@ -21,6 +21,9 @@ let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
 let discordRpc: DiscordRPC.Client | null = null;
+let discordRpcClientId = '';
+let discordRpcConnecting: Promise<void> | null = null;
+let presenceRetry: NodeJS.Timeout | null = null;
 let presenceTrack: {title?:string;channel?:string}|null = null;
 let presencePlaying = false;
 
@@ -28,25 +31,57 @@ function validPresenceButton(label: string, url: string) {
   return label.trim() && /^https:\/\//i.test(url) ? { label: label.trim().slice(0, 32), url } : null;
 }
 
-async function setupRichPresence(config: Config) {
-  discordRpc?.destroy().catch(() => {});
+function presenceActivity(config: Config) {
+  const buttons = [validPresenceButton(config.presenceLinkLabel, config.presenceLinkUrl),validPresenceButton(config.presenceDownloadLabel, config.presenceDownloadUrl)].filter((button): button is {label:string;url:string} => Boolean(button));
+  const activityTypes={playing:0,listening:2,watching:3,competing:5} as const;
+  return {type:activityTypes[config.presenceType]??2,details:(config.presenceShowTrack&&presenceTrack?.title?presenceTrack.title:config.presenceDetails||'En écoute sur Inazuma Music').trim().slice(0,128),state:(config.presenceShowTrack&&presenceTrack?`${presencePlaying?'En lecture':'En pause'} • ${presenceTrack.channel||'Inazuma Music'}`:config.presenceState||'Version 2.0 • OFFICIEL').trim().slice(0,128),assets:{large_image:config.presenceLargeImageKey.trim().slice(0,128)||'inazuma_music_logo',large_text:config.presenceLargeImageText.trim().slice(0,128)||'Inazuma Music'},buttons:buttons.length?buttons:undefined,instance:false};
+}
+
+function resetRichPresence(rpc?: DiscordRPC.Client) {
+  if (rpc && discordRpc !== rpc) return;
+  const current = discordRpc;
   discordRpc = null;
-  if (!config.presenceEnabled || !/^\d{17,20}$/.test(config.discordClientId)) return;
-  const rpc = new DiscordRPC.Client({ transport: 'ipc' });
-  discordRpc = rpc;
+  discordRpcClientId = '';
+  discordRpcConnecting = null;
+  current?.destroy().catch(() => {});
+}
+
+function retryRichPresence() {
+  if (presenceRetry) clearTimeout(presenceRetry);
+  presenceRetry = setTimeout(() => { presenceRetry=null; void setupRichPresence(getConfig()); }, 5_000);
+}
+
+async function setupRichPresence(config: Config) {
+  if (!config.presenceEnabled || !/^\d{17,20}$/.test(config.discordClientId)) {
+    if (presenceRetry) clearTimeout(presenceRetry);
+    presenceRetry = null;
+    resetRichPresence();
+    return;
+  }
+  if (discordRpc && discordRpcClientId !== config.discordClientId) resetRichPresence();
+  if (!discordRpc) {
+    if (!discordRpcConnecting) {
+      const rpc = new DiscordRPC.Client({ transport: 'ipc' });
+      discordRpc = rpc;
+      discordRpcClientId = config.discordClientId;
+      rpc.on('disconnected', () => { resetRichPresence(rpc); retryRichPresence(); });
+      discordRpcConnecting = rpc.login({ clientId: config.discordClientId }).then(() => undefined).catch((error) => {
+        console.error('[Inazuma Music] Connexion Rich Presence indisponible:', error instanceof Error ? error.message : String(error));
+        resetRichPresence(rpc);
+        retryRichPresence();
+        throw error;
+      }).finally(() => { if (discordRpc === rpc) discordRpcConnecting=null; });
+    }
+    try { await discordRpcConnecting; } catch { return; }
+  }
+  const rpc = discordRpc;
+  if (!rpc) return;
   try {
-    await rpc.login({ clientId: config.discordClientId });
-    const buttons = [
-      validPresenceButton(config.presenceLinkLabel, config.presenceLinkUrl),
-      validPresenceButton(config.presenceDownloadLabel, config.presenceDownloadUrl),
-    ].filter((button): button is {label:string;url:string} => Boolean(button));
-    const activityTypes={playing:0,listening:2,watching:3,competing:5} as const;
-    const activity={type:activityTypes[config.presenceType]??2,details:(config.presenceShowTrack&&presenceTrack?.title?presenceTrack.title:config.presenceDetails||'En écoute sur Inazuma Music').trim().slice(0,128),state:(config.presenceShowTrack&&presenceTrack?`${presencePlaying?'En lecture':'En pause'} • ${presenceTrack.channel||'Inazuma Music'}`:config.presenceState||'Version 2.0 • OFFICIEL').trim().slice(0,128),assets:{large_image:config.presenceLargeImageKey.trim().slice(0,128)||'inazuma_music_logo',large_text:config.presenceLargeImageText.trim().slice(0,128)||'Inazuma Music'},buttons:buttons.length?buttons:undefined,instance:false};
-    await (rpc as unknown as {request:(command:string,args:unknown)=>Promise<unknown>}).request('SET_ACTIVITY',{pid:process.pid,activity});
+    await (rpc as unknown as {request:(command:string,args:unknown)=>Promise<unknown>}).request('SET_ACTIVITY',{pid:process.pid,activity:presenceActivity(config)});
   } catch (error) {
-    console.error('[Inazuma Music] Rich Presence indisponible:', error instanceof Error ? error.message : String(error));
-    if (discordRpc === rpc) discordRpc = null;
-    rpc.destroy().catch(() => {});
+    console.error('[Inazuma Music] Mise à jour Rich Presence indisponible:', error instanceof Error ? error.message : String(error));
+    resetRichPresence(rpc);
+    retryRichPresence();
   }
 }
 
