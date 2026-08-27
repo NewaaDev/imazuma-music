@@ -90,7 +90,7 @@ export function createDesktopBridge(client, music) {
       guilds: client.guilds.cache.map((item) => ({ id: item.id, name: item.name, icon: item.iconURL({ extension: 'png', size: 64 }) || '' })),
       textChannels: targetGuild?.channels.cache.filter((item) => item.isTextBased?.() && item.isSendable?.() && !item.isThread?.()).map((item) => ({ id: item.id, name: item.name })) || [],
       voiceChannel: channel?.name || 'Aucun salon', voiceMembers,
-      playing: player?.player?.state?.status === AudioPlayerStatus.Playing, volume: player?.volume ?? config.defaultVolume,
+      playing: player?.player?.state?.status === AudioPlayerStatus.Playing, volume: player?.volume ?? config.defaultVolume, loop:player?.loop||'off',
       audioPreset: player?.audioPreset || 'normal', normalizeVolume: player?.normalizeVolume ?? true, crossfadeSeconds: player?.crossfadeSeconds ?? 3,
       position: total > 0 ? Math.min(100, (elapsed / total) * 100) : 0, elapsed,
       current: desktopTrack(player?.current), queue: (player?.queue || []).map(desktopTrack), history: [],
@@ -151,6 +151,7 @@ export function createDesktopBridge(client, music) {
     else if (action === 'skip') player.skip();
     else if (action === 'stop') player.stop();
     else if (action === 'volume') { if (!player) player = await connectedPlayer(context); player.setVolume(Math.max(0, Math.min(100, Number(payload)))); }
+    else if (action === 'loop') { player.loop = ['off','track','queue'].includes(String(payload)) ? String(payload) : 'off'; }
     else if (action === 'audio_settings') { if (!player) player = await connectedPlayer(context); player.setAudioSettings(payload || {}); }
     else if (action === 'seek') player.seek(Number(payload));
     else if (action === 'remove_queue') player.queue.splice(Number(payload), 1);
