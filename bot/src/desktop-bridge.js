@@ -133,7 +133,7 @@ export function createDesktopBridge(client, music) {
     if (action === 'get_state') return;
     if (!member) throw new Error('Connecte ton compte Discord pour contrôler cette session.');
     if (action === 'set_release_channel') {
-      const channelId = saveReleaseChannel(payload || context.releaseChannelId);
+      const channelId = saveReleaseChannel(targetGuild.id, payload || context.releaseChannelId);
       await announceRelease(client, { channelId, enabled: config.releaseAnnouncements });
       return;
     }

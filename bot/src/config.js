@@ -29,7 +29,7 @@ export const config = Object.freeze({
   remoteRelayToken: process.env.NEWAA_RELAY_TOKEN || '',
   autoplay: boolean('AUTOPLAY', true),
   releaseAnnouncements: boolean('RELEASE_ANNOUNCEMENTS', true),
-  releaseChannelId: process.env.RELEASE_CHANNEL_ID || '1468549168200024086',
+  releaseChannelId: process.env.RELEASE_CHANNEL_ID || '',
 });
 
 export function assertRuntimeConfig({ deploy = false } = {}) {

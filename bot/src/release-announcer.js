@@ -46,14 +46,26 @@ export async function announceRelease(client, { channelId, enabled = true } = {}
   return { sent: true, version: release.version, messageId: message.id };
 }
 
-export function selectedReleaseChannel(fallback = '') {
-  return String(readJson(selectionFile, {})?.channelId || fallback).trim();
+export function selectedReleaseChannels(fallbackGuildId = '', fallbackChannelId = '') {
+  const saved = readJson(selectionFile, {});
+  const channels = saved?.channels && typeof saved.channels === 'object' ? saved.channels : {};
+  const entries = Object.entries(channels)
+    .map(([guildId, channelId]) => ({ guildId: String(guildId), channelId: String(channelId) }))
+    .filter(({ guildId, channelId }) => /^\d{17,20}$/.test(guildId) && /^\d{17,20}$/.test(channelId));
+  if (entries.length) return entries;
+  const guildId = String(fallbackGuildId || '').trim();
+  const channelId = String(saved?.channelId || fallbackChannelId || '').trim();
+  return /^\d{17,20}$/.test(guildId) && /^\d{17,20}$/.test(channelId) ? [{ guildId, channelId }] : [];
 }
 
-export function saveReleaseChannel(channelId) {
+export function saveReleaseChannel(guildId, channelId) {
+  const guild = String(guildId || '').trim();
   const value = String(channelId || '').trim();
+  if (!/^\d{17,20}$/.test(guild)) throw new Error('Choisis un serveur Discord valide pour les mises à jour.');
   if (!/^\d{17,20}$/.test(value)) throw new Error('Choisis un salon Discord valide pour les mises à jour.');
+  const saved = readJson(selectionFile, {});
+  const channels = saved?.channels && typeof saved.channels === 'object' ? saved.channels : {};
   fs.mkdirSync(path.dirname(selectionFile), { recursive: true });
-  fs.writeFileSync(selectionFile, JSON.stringify({ channelId: value, updatedAt: new Date().toISOString() }, null, 2));
+  fs.writeFileSync(selectionFile, JSON.stringify({ channels: { ...channels, [guild]: value }, updatedAt: new Date().toISOString() }, null, 2));
   return value;
 }

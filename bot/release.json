@@ -1,13 +1,10 @@
 {
-  "version": "2.2.5",
-  "title": "Inazuma Music 2.2.5",
+  "version": "2.2.6",
+  "title": "Inazuma Music 2.2.6",
   "changes": [
-    "Import de playlists YouTube avec aperçu avant création",
-    "Lecture continue locale plus variée et moins répétitive",
-    "Correctif des installations incomplètes et de l’écran noir",
-    "Mises à jour Windows complètes pour éviter les paquets corrompus",
-    "Salons Discord séparés pour la musique et les annonces de mises à jour",
-    "Installateur Windows complet vérifié après extraction"
+    "Configuration du salon d’annonces séparée pour chaque serveur Discord",
+    "Aucune configuration Family Lunn imposée aux autres utilisateurs",
+    "Contrôle renforcé du paquet Electron et de son fichier index.html"
   ],
   "downloadUrl": "https://github.com/NewaaDev/imazuma-music/releases/latest"
 }
