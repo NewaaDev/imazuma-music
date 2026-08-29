@@ -1,2 +1,4 @@
 ACCESS_TOKEN="replace-for-local-testing"
 YOUTUBE_API_KEY="replace-for-local-testing"
+SPOTIFY_CLIENT_ID="replace-for-local-testing"
+SPOTIFY_CLIENT_SECRET="replace-for-local-testing"

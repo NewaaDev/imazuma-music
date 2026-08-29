@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('newaa', {
   selectAndUploadMp3: () => ipcRenderer.invoke('media:select-upload'),
   updatePresence: (track: unknown, playing: boolean) => ipcRenderer.invoke('presence:update', track, playing),
   getPublicPlaylists: (query?: string) => ipcRenderer.invoke('playlists:public', query),
+  importPlaylist: (url: string) => ipcRenderer.invoke('playlists:import', url),
   publishPlaylist: (playlist: unknown) => ipcRenderer.invoke('playlists:publish', playlist),
   unpublishPlaylist: (id: string, shareKey: string) => ipcRenderer.invoke('playlists:unpublish', id, shareKey),
   loginDiscord: (clientId: string) => ipcRenderer.invoke('discord:login', clientId),
