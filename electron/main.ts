@@ -19,7 +19,7 @@ function bundledRemote(): Partial<Config> {
   } catch { return {}; }
 }
 const remote = bundledRemote();
-const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', playbackTarget:'discord', autoRadio:true, discordClientId: remote.discordClientId || '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds: '', audioPreset: 'normal', normalizeVolume: true, crossfadeSeconds: 3, presenceEnabled: true, presenceType:'listening', presenceShowTrack:true, presenceDetails: 'En écoute sur Inazuma Music', presenceState:'Version 2.2.0 • OFFICIEL', presenceLargeImageKey:'inazuma_music_logo', presenceLargeImageText:'Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: 'https://github.com/NewaaDev/imazuma-music/releases/latest' };
+const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', playbackTarget:'discord', autoRadio:true, discordClientId: remote.discordClientId || '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds: '', audioPreset: 'normal', normalizeVolume: true, crossfadeSeconds: 3, presenceEnabled: true, presenceType:'listening', presenceShowTrack:true, presenceDetails: 'En écoute sur Inazuma Music', presenceState:'Version 2.2.1 • OFFICIEL', presenceLargeImageKey:'inazuma_music_logo', presenceLargeImageText:'Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: 'https://github.com/NewaaDev/imazuma-music/releases/latest' };
 let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
@@ -37,7 +37,7 @@ function validPresenceButton(label: string, url: string) {
 function presenceActivity(config: Config) {
   const buttons = [validPresenceButton(config.presenceLinkLabel, config.presenceLinkUrl),validPresenceButton(config.presenceDownloadLabel, config.presenceDownloadUrl)].filter((button): button is {label:string;url:string} => Boolean(button));
   const activityTypes={playing:0,listening:2,watching:3,competing:5} as const;
-  return {type:activityTypes[config.presenceType]??2,details:(config.presenceShowTrack&&presenceTrack?.title?presenceTrack.title:config.presenceDetails||'En écoute sur Inazuma Music').trim().slice(0,128),state:(config.presenceShowTrack&&presenceTrack?`${presencePlaying?'En lecture':'En pause'} • ${presenceTrack.channel||'Inazuma Music'}`:config.presenceState||'Version 2.2.0 • OFFICIEL').trim().slice(0,128),assets:{large_image:config.presenceLargeImageKey.trim().slice(0,128)||'inazuma_music_logo',large_text:config.presenceLargeImageText.trim().slice(0,128)||'Inazuma Music'},buttons:buttons.length?buttons:undefined,instance:false};
+  return {type:activityTypes[config.presenceType]??2,details:(config.presenceShowTrack&&presenceTrack?.title?presenceTrack.title:config.presenceDetails||'En écoute sur Inazuma Music').trim().slice(0,128),state:(config.presenceShowTrack&&presenceTrack?`${presencePlaying?'En lecture':'En pause'} • ${presenceTrack.channel||'Inazuma Music'}`:config.presenceState||'Version 2.2.1 • OFFICIEL').trim().slice(0,128),assets:{large_image:config.presenceLargeImageKey.trim().slice(0,128)||'inazuma_music_logo',large_text:config.presenceLargeImageText.trim().slice(0,128)||'Inazuma Music'},buttons:buttons.length?buttons:undefined,instance:false};
 }
 
 function resetRichPresence(rpc?: DiscordRPC.Client) {
@@ -115,7 +115,7 @@ function getConfig(): Config {
     writeStore(store);
   }
   const saved = store.public as Partial<Config> || {};
-  if(saved.presenceState&&(/B[ÊE]TA/i.test(saved.presenceState)||/^Version 2\.(?:0|1(?:\.[1-5])?) • OFFICIEL$/.test(saved.presenceState)))saved.presenceState='Version 2.2.0 • OFFICIEL';
+  if(saved.presenceState&&(/B[ÊE]TA/i.test(saved.presenceState)||/^Version 2\.(?:0|1(?:\.[1-5])?|2\.0) • OFFICIEL$/.test(saved.presenceState)))saved.presenceState='Version 2.2.1 • OFFICIEL';
   return {
     ...defaults,
     ...saved,
@@ -128,7 +128,10 @@ function getConfig(): Config {
 function createWindow() {
   mainWindow = new BrowserWindow({ width: 1440, height: 900, minWidth: 1080, minHeight: 680, icon: path.join(__dirname, '../assets/icon.png'), backgroundColor: '#08070c', titleBarStyle: 'hidden', titleBarOverlay: { color: '#08070c', symbolColor: '#c9c2d8', height: 42 }, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false } });
   const dev = process.env.VITE_DEV_SERVER_URL;
-  dev ? mainWindow.loadURL(dev) : mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  const recovery = (reason:string) => mainWindow?.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`<style>body{margin:0;background:#08070c;color:#fff;font:16px Arial;display:grid;place-items:center;height:100vh}main{max-width:620px;padding:40px;text-align:center}h1{color:#a855f7}p{color:#b8afc7;line-height:1.6}</style><main><h1>Inazuma Music</h1><h2>Installation incomplète</h2><p>${reason}</p><p>Réinstalle la dernière version officielle depuis github.com/NewaaDev/imazuma-music/releases/latest.</p></main>`)}`);
+  if(dev) void mainWindow.loadURL(dev).catch(()=>recovery('Le serveur de développement ne répond pas.'));
+  else { const entry=path.join(__dirname,'../dist/index.html'); fs.existsSync(entry)?void mainWindow.loadFile(entry).catch(()=>recovery("L'interface n'a pas pu être chargée.")):void recovery("Le fichier de l'interface est absent du paquet installé."); }
+  mainWindow.webContents.on('did-fail-load',(_event,code,description,url)=>{if(code!==-3&&!url.startsWith('data:'))void recovery(`Erreur de chargement ${code} : ${description}`)});
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[Inazuma Music] Le rendu a été interrompu:', details.reason);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
