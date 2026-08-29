@@ -28,6 +28,8 @@ export const config = Object.freeze({
   remoteRelayUrl: process.env.NEWAA_RELAY_URL || '',
   remoteRelayToken: process.env.NEWAA_RELAY_TOKEN || '',
   autoplay: boolean('AUTOPLAY', true),
+  releaseAnnouncements: boolean('RELEASE_ANNOUNCEMENTS', true),
+  releaseChannelId: process.env.RELEASE_CHANNEL_ID || '1468549168200024086',
 });
 
 export function assertRuntimeConfig({ deploy = false } = {}) {

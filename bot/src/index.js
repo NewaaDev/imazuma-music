@@ -5,6 +5,7 @@ import { MusicManager } from './music-manager.js';
 import { createDesktopBridge } from './desktop-bridge.js';
 import { createRemoteRelay } from './remote-relay.js';
 import { restoreSessions, saveSessions } from './session-store.js';
+import { announceRelease, selectedReleaseChannel } from './release-announcer.js';
 
 assertRuntimeConfig();
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
@@ -19,6 +20,10 @@ client.once(Events.ClientReady, (readyClient) => {
   void restoreSessions(readyClient, music).then((count) => {
     if (count) console.log(`${count} session(s) Inazuma restaurée(s).`);
   });
+  const releaseChannelId = selectedReleaseChannel(config.releaseChannelId);
+  void announceRelease(readyClient, { channelId: releaseChannelId, enabled: config.releaseAnnouncements })
+    .then((result) => { if (result.sent) console.log(`[Inazuma Music] Mise à jour ${result.version} annoncée dans ${releaseChannelId}.`); })
+    .catch((error) => console.error('[Inazuma Music] Annonce de mise à jour:', error.message));
 });
 client.on(Events.InteractionCreate, (interaction) => handleInteraction(interaction, music));
 client.on(Events.VoiceStateUpdate, (oldState, newState) => desktopBridge?.handleVoiceStateUpdate(oldState, newState));

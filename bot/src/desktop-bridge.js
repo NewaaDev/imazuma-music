@@ -1,6 +1,7 @@
 import { AudioPlayerStatus } from '@discordjs/voice';
 import { WebSocketServer, WebSocket } from 'ws';
 import { config } from './config.js';
+import { announceRelease, saveReleaseChannel } from './release-announcer.js';
 
 function durationLabel(value) {
   if (typeof value === 'string') return value;
@@ -131,6 +132,11 @@ export function createDesktopBridge(client, music) {
     let player = targetGuild ? music.get(targetGuild.id) : null;
     if (action === 'get_state') return;
     if (!member) throw new Error('Connecte ton compte Discord pour contrôler cette session.');
+    if (action === 'set_release_channel') {
+      const channelId = saveReleaseChannel(payload || context.preferredTextChannelId);
+      await announceRelease(client, { channelId, enabled: config.releaseAnnouncements });
+      return;
+    }
     let policy = controlPolicies.get(targetGuild.id);
     if (!policy) {
       policy = { ownerId: userId, mode: context.controlMode === 'shared' ? 'shared' : 'private', roleIds: String(context.allowedRoleIds || '').split(',').map((id) => id.trim()).filter(Boolean) };
