@@ -1,8 +1,8 @@
 {
-  "version": "2.2.7",
-  "title": "Inazuma Music 2.2.7",
+  "version": "2.2.8",
+  "title": "Inazuma Music 2.2.8",
   "changes": [
-    "Ajout d’un champ webhook Discord configurable dans l’application",
+    "Annonces Discord harmonisées avec le jaune Inazuma",
     "Webhook chiffré localement et séparé pour chaque serveur",
     "Bouton de test intégré pour vérifier immédiatement le salon d’annonces"
   ],

@@ -15,8 +15,9 @@ export function releaseAnnouncement(release) {
   if (!release?.version || !changes.length) return null;
   return {
     embeds: [new EmbedBuilder()
-      .setColor(0x8b5cf6)
+      .setColor(0xf5b800)
       .setAuthor({ name: 'Inazuma Music' })
+      .setThumbnail('https://raw.githubusercontent.com/NewaaDev/imazuma-music/feature/inazuma-v2/assets/icon.png')
       .setTitle(`⚡ Mise à jour ${String(release.version).slice(0, 32)}`)
       .setDescription(changes.map((change) => `• ${change}`).join('\n').slice(0, 4000))
       .addFields({ name: 'Version', value: String(release.version).slice(0, 100), inline: true })
