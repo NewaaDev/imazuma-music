@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('newaa', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (config: unknown) => ipcRenderer.invoke('config:set', config),
+  testReleaseWebhook: (url: string) => ipcRenderer.invoke('webhook:test', url),
   getLibrary: () => ipcRenderer.invoke('library:get'),
   saveLibrary: (library: unknown) => ipcRenderer.invoke('library:set', library),
   searchYouTube: (query: string, pageToken?: string) => ipcRenderer.invoke('youtube:search', query, pageToken),
