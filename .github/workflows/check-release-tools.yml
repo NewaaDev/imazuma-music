@@ -1,0 +1,31 @@
+name: Check release safeguards
+
+on:
+  push:
+    branches: [main, feature/inazuma-v2]
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/**'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Test release messages and actual-package checks without secrets
+        run: node --test scripts/announce-discord-release.test.mjs scripts/verify-packaged-ui.test.mjs
