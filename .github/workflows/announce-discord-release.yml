@@ -1,0 +1,50 @@
+name: Announce release on Discord
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version officielle à annoncer (exemple : v2.2.8)'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      DISCORD_RELEASE_WEBHOOK:
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: discord-release-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  announce:
+    if: github.repository == 'NewaaDev/imazuma-music'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read trusted scripts from the default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch || 'main' }}
+          persist-credentials: false
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test announcement safeguards (no secrets)
+        run: node --test scripts/announce-discord-release.test.mjs
+      - name: Announce the complete published version
+        run: node scripts/announce-discord-release.mjs
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}

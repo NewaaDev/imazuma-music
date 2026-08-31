@@ -4,22 +4,81 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag officiel à reconstruire et vérifier (exemple : v2.2.8)'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
+concurrency:
+  group: windows-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
+    if: github.repository == 'NewaaDev/imazuma-music'
     runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      - name: Validate the requested release tag
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw 'Expected an official version tag vX.Y.Z.'
+          }
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - name: Load release validation from the default branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: .release-validation
+          sparse-checkout: scripts
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify the package version matches the tag
+        run: node -e "if ('v'+require('./package.json').version!==process.env.RELEASE_TAG) process.exit(1)"
       - run: npm run typecheck
-      - name: Build and publish release
-        run: npx electron-builder --win nsis --publish always
+      - name: Build the complete renderer
+        run: npx vite build
+      - name: Build the Windows installer without publishing
+        run: npx electron-builder --win nsis --publish never
+      - name: Build the portable application without publishing
+        run: npx electron-builder --win portable --publish never --config.win.artifactName='Inazuma-Music-${version}-${arch}-portable.${ext}'
+      - name: Verify the UI inside the actual Windows packages
+        run: node .release-validation/scripts/verify-packaged-ui.mjs
+      - name: Publish only verified Windows files
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath package.json -Raw | ConvertFrom-Json).version
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --verify-tag --title "Inazuma Music $version" --generate-notes --draft
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot prepare the GitHub release.' }
+          }
+          gh release upload $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --clobber "release/Inazuma-Music-$version-x64-setup.exe" "release/Inazuma-Music-$version-x64-setup.exe.blockmap" "release/Inazuma-Music-$version-x64-portable.exe" release/latest.yml
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed; no announcement will be sent.' }
+          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed; no announcement will be sent.' }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  announce:
+    needs: release
+    uses: NewaaDev/imazuma-music/.github/workflows/announce-discord-release.yml@main
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    secrets:
+      DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
