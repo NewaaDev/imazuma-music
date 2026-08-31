@@ -51,6 +51,8 @@ jobs:
       - name: Verify the package version matches the tag
         run: node -e "if ('v'+require('./package.json').version!==process.env.RELEASE_TAG) process.exit(1)"
       - run: npm run typecheck
+      - name: Test independent Application and Discord playback
+        run: npm run test:playback
       - name: Build the complete renderer
         run: npx vite build
       - name: Build the Windows installer without publishing

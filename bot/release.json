@@ -1,10 +1,14 @@
 {
-  "version": "2.2.8",
-  "title": "Inazuma Music 2.2.8",
+  "version": "2.2.9",
+  "title": "Inazuma Music 2.2.9",
   "changes": [
-    "Annonces Discord harmonisées avec le jaune Inazuma",
-    "Webhook chiffré localement et séparé pour chaque serveur",
-    "Bouton de test intégré pour vérifier immédiatement le salon d’annonces"
+    "Le bouton Application ne déconnecte plus le bot du salon vocal : les auditeurs Discord conservent leur musique",
+    "Lecteurs Application et Discord indépendants : chaque morceau, file d’attente et progression reste en place pendant les basculements",
+    "Fin de morceau et lecture continue locales isolées des commandes Discord, même quand le lecteur Discord est sélectionné",
+    "Raccourcis multimédias actualisés avec la file courante ; une radio en préparation ne peut plus relancer la lecture après un arrêt",
+    "Le timer est annulé lors d’un changement de lecteur pour éviter d’arrêter l’autre session",
+    "Historique sauvegardé pour les morceaux terminés en arrière-plan, sans faux ajout lors d’un simple basculement",
+    "Tests de non-régression et vérification de l’interface dans les véritables paquets Windows avant publication"
   ],
   "downloadUrl": "https://github.com/NewaaDev/imazuma-music/releases/latest"
 }

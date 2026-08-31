@@ -1,15 +1,17 @@
 {
   "name": "inazuma-music-desktop",
-  "version": "2.2.8",
+  "version": "2.2.9",
   "private": true,
   "description": "Application Windows de contrôle pour Inazuma Music",
   "author": "NEWAA",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
-    "build": "tsc -b && vite build && tsc -p electron/tsconfig.json && electron-builder --win nsis && electron-builder --win portable --config.win.artifactName=Inazuma-Music-${version}-${arch}-portable.${ext}",
+    "build": "npm test && tsc -b && vite build && tsc -p electron/tsconfig.json && electron-builder --win nsis --publish never && electron-builder --win portable --publish never --config.win.artifactName=Inazuma-Music-${version}-${arch}-portable.${ext} && node scripts/verify-packaged-ui.mjs",
     "build:dir": "tsc -b && vite build && tsc -p electron/tsconfig.json && electron-builder --dir",
-    "typecheck": "tsc -b --pretty false && tsc -p electron/tsconfig.json --pretty false"
+    "typecheck": "tsc -b --pretty false && tsc -p electron/tsconfig.json --pretty false",
+    "test": "node scripts/playback-isolation.test.mjs && node scripts/announce-discord-release.test.mjs && node scripts/verify-packaged-ui.test.mjs",
+    "test:playback": "node scripts/playback-isolation.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
@@ -30,6 +32,7 @@
     "cross-env": "^7.0.3",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
+    "react-test-renderer": "18.3.1",
     "typescript": "^5.7.2",
     "wait-on": "^8.0.1",
     "wrangler": "^4.125.0"

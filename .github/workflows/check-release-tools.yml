@@ -6,10 +6,14 @@ on:
     paths:
       - '.github/workflows/**'
       - 'scripts/**'
+      - 'src/**'
+      - 'package*.json'
   pull_request:
     paths:
       - '.github/workflows/**'
       - 'scripts/**'
+      - 'src/**'
+      - 'package*.json'
 
 permissions:
   contents: read
@@ -29,3 +33,6 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Test release messages and actual-package checks without secrets
         run: node --test scripts/announce-discord-release.test.mjs scripts/verify-packaged-ui.test.mjs
+      - name: Test playback isolation when the desktop tests are present
+        if: hashFiles('scripts/playback-isolation.test.mjs') != ''
+        run: node scripts/playback-isolation.test.mjs
