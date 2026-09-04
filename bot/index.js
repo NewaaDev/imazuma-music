@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 async function ensureYtDlp() {
   if (process.env.YTDLP_PATH) return;
@@ -47,13 +48,24 @@ if (existsSync(relayTokenFile)) {
   }
 }
 
-if (!existsSync(new URL('./node_modules/discord.js/package.json', import.meta.url))) {
-  console.log('[Inazuma Music] Installation des dépendances manquantes…');
+const packageLockFile = new URL('./package-lock.json', import.meta.url);
+const installMarkerFile = new URL('./node_modules/.inazuma-package-lock.sha256', import.meta.url);
+const packageLockDigest = existsSync(packageLockFile)
+  ? createHash('sha256').update(readFileSync(packageLockFile)).digest('hex')
+  : '';
+const installedDigest = existsSync(installMarkerFile)
+  ? readFileSync(installMarkerFile, 'utf8').trim()
+  : '';
+const dependenciesMissing = !existsSync(new URL('./node_modules/discord.js/package.json', import.meta.url));
+
+if (dependenciesMissing || (packageLockDigest && installedDigest !== packageLockDigest)) {
+  console.log('[Inazuma Music] Installation/mise à jour des dépendances…');
   execFileSync('npm', ['install', '--omit=dev', '--no-audit', '--no-fund'], {
     cwd: new URL('.', import.meta.url),
     stdio: 'inherit',
     shell: process.platform === 'win32',
   });
+  if (packageLockDigest) writeFileSync(installMarkerFile, packageLockDigest);
 }
 
 await ensureYtDlp();
