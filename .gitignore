@@ -6,4 +6,5 @@ release/
 *.log
 .env
 assets/remote-access-token.txt
+bot/remote-access-token.txt
 *.tsbuildinfo
