@@ -8,10 +8,20 @@ import { restoreSessions, saveSessions } from './session-store.js';
 import { announceRelease, selectedReleaseChannels } from './release-announcer.js';
 
 assertRuntimeConfig();
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages] });
 const music = new MusicManager();
 let desktopBridge;
 let remoteRelay;
+let announcementMonitor;
+
+async function ensureReleaseAnnouncements(readyClient) {
+  for (const { guildId, channelId } of selectedReleaseChannels(config.guildId, config.releaseChannelId)) {
+    if (!readyClient.guilds.cache.has(guildId)) continue;
+    await announceRelease(readyClient, { channelId, enabled: config.releaseAnnouncements })
+      .then((result) => { if (result.sent) console.log(`[Inazuma Music] Mise à jour ${result.version} annoncée dans ${channelId}.`); })
+      .catch((error) => console.error('[Inazuma Music] Annonce de mise à jour:', error.message));
+  }
+}
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Connecté en tant que ${readyClient.user.tag} (${readyClient.guilds.cache.size} serveur(s)).`);
@@ -20,15 +30,12 @@ client.once(Events.ClientReady, (readyClient) => {
   void restoreSessions(readyClient, music).then((count) => {
     if (count) console.log(`${count} session(s) Inazuma restaurée(s).`);
   });
-  for (const { guildId, channelId } of selectedReleaseChannels(config.guildId, config.releaseChannelId)) {
-    if (!readyClient.guilds.cache.has(guildId)) continue;
-    void announceRelease(readyClient, { channelId, enabled: config.releaseAnnouncements })
-      .then((result) => { if (result.sent) console.log(`[Inazuma Music] Mise à jour ${result.version} annoncée dans ${channelId}.`); })
-      .catch((error) => console.error('[Inazuma Music] Annonce de mise à jour:', error.message));
-  }
+  void ensureReleaseAnnouncements(readyClient);
+  announcementMonitor = setInterval(() => void ensureReleaseAnnouncements(readyClient), 60_000);
 });
 client.on(Events.InteractionCreate, (interaction) => handleInteraction(interaction, music));
 client.on(Events.VoiceStateUpdate, (oldState, newState) => desktopBridge?.handleVoiceStateUpdate(oldState, newState));
+client.on(Events.MessageDelete, (message) => music.handleDeletedMessage(message));
 client.on(Events.Error, (error) => console.error('Erreur Discord:', error));
 const persistenceTimer = setInterval(() => {
   try { saveSessions(music); } catch (error) { console.error('[Inazuma Music] Sauvegarde:', error.message); }
@@ -37,6 +44,7 @@ const persistenceTimer = setInterval(() => {
 async function shutdown(signal) {
   console.log(`${signal} reçu, arrêt propre…`);
   clearInterval(persistenceTimer);
+  clearInterval(announcementMonitor);
   try { saveSessions(music); } catch {}
   music.destroyAll();
   desktopBridge?.close();

@@ -19,7 +19,7 @@ function bundledRemote(): Partial<Config> {
   } catch { return {}; }
 }
 const remote = bundledRemote();
-const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', playbackTarget:'discord', autoRadio:true, discordClientId: remote.discordClientId || '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', releaseChannelId:'', releaseWebhookUrl:'', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds: '', audioPreset: 'normal', normalizeVolume: true, crossfadeSeconds: 3, presenceEnabled: true, presenceType:'listening', presenceShowTrack:true, presenceDetails: 'En écoute sur Inazuma Music', presenceState:'Version 2.2.9 • OFFICIEL', presenceLargeImageKey:'inazuma_music_logo', presenceLargeImageText:'Inazuma Music', presenceLinkLabel: '', presenceLinkUrl: '', presenceDownloadLabel: 'Télécharger Inazuma', presenceDownloadUrl: 'https://github.com/NewaaDev/imazuma-music/releases/latest' };
+const defaults: Config = { wsUrl: remote.wsUrl || 'ws://127.0.0.1:8765', apiToken: '', youtubeApiKey: '', botCommand: '', botCwd: '', demoMode: false, theme: 'inazuma', playbackTarget:'discord', autoRadio:true, discordClientId: remote.discordClientId || '', discordUserId: '', discordUserName: '', discordAvatar: '', preferredGuildId: '', preferredTextChannelId: '', releaseChannelId:'', releaseWebhookUrl:'', autoJoin: true, autoLeave: true, controlMode: 'private', allowedRoleIds:'', audioPreset:'normal', normalizeVolume:true, crossfadeSeconds:3, presenceEnabled:true, presenceType:'listening', presenceShowTrack:true, presenceDetails:'En écoute sur Inazuma Music', presenceState:'Version 2.2.10 • OFFICIEL', presenceLargeImageKey:'inazuma_music_logo', presenceLargeImageText:'Inazuma Music', presenceLinkLabel:'', presenceLinkUrl:'', presenceDownloadLabel:'Télécharger Inazuma', presenceDownloadUrl:'https://github.com/NewaaDev/imazuma-music/releases/latest' };
 let botProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let miniWindow: BrowserWindow | null = null;
@@ -29,6 +29,8 @@ let discordRpcConnecting: Promise<void> | null = null;
 let presenceRetry: NodeJS.Timeout | null = null;
 let presenceTrack: {title?:string;channel?:string}|null = null;
 let presencePlaying = false;
+let releaseWebhookMonitor: NodeJS.Timeout | null = null;
+let releaseWebhookCheckRunning = false;
 
 function validPresenceButton(label: string, url: string) {
   return label.trim() && /^https:\/\//i.test(url) ? { label: label.trim().slice(0, 32), url } : null;
@@ -37,7 +39,7 @@ function validPresenceButton(label: string, url: string) {
 function presenceActivity(config: Config) {
   const buttons = [validPresenceButton(config.presenceLinkLabel, config.presenceLinkUrl),validPresenceButton(config.presenceDownloadLabel, config.presenceDownloadUrl)].filter((button): button is {label:string;url:string} => Boolean(button));
   const activityTypes={playing:0,listening:2,watching:3,competing:5} as const;
-  return {type:activityTypes[config.presenceType]??2,details:(config.presenceShowTrack&&presenceTrack?.title?presenceTrack.title:config.presenceDetails||'En écoute sur Inazuma Music').trim().slice(0,128),state:(config.presenceShowTrack&&presenceTrack?`${presencePlaying?'En lecture':'En pause'} • ${presenceTrack.channel||'Inazuma Music'}`:config.presenceState||'Version 2.2.9 • OFFICIEL').trim().slice(0,128),assets:{large_image:config.presenceLargeImageKey.trim().slice(0,128)||'inazuma_music_logo',large_text:config.presenceLargeImageText.trim().slice(0,128)||'Inazuma Music'},buttons:buttons.length?buttons:undefined,instance:false};
+  return {type:activityTypes[config.presenceType]??2,details:(config.presenceShowTrack&&presenceTrack?.title?presenceTrack.title:config.presenceDetails||'En écoute sur Inazuma Music').trim().slice(0,128),state:(config.presenceShowTrack&&presenceTrack?`${presencePlaying?'En lecture':'En pause'} • ${presenceTrack.channel||'Inazuma Music'}`:config.presenceState||'Version 2.2.10 • OFFICIEL').trim().slice(0,128),assets:{large_image:config.presenceLargeImageKey.trim().slice(0,128)||'inazuma_music_logo',large_text:config.presenceLargeImageText.trim().slice(0,128)||'Inazuma Music'},buttons:buttons.length?buttons:undefined,instance:false};
 }
 
 function resetRichPresence(rpc?: DiscordRPC.Client) {
@@ -115,7 +117,14 @@ function validWebhookUrl(value:string) {
   try { const url=new URL(value); return url.protocol==='https:'&&['discord.com','discordapp.com','canary.discord.com','ptb.discord.com'].includes(url.hostname)&&/^\/api\/webhooks\/\d{17,20}\/[A-Za-z0-9._-]+$/.test(url.pathname); } catch { return false; }
 }
 function releaseNotesText(value:unknown){if(typeof value==='string')return value.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,3500);if(Array.isArray(value))return value.map((item:any)=>String(item?.note||'')).filter(Boolean).join('\n').slice(0,3500);return ''}
-async function announceWebhookUpdate(version:string,releaseNotes:unknown){const config=getConfig();if(!config.preferredGuildId||!config.releaseWebhookUrl)return;const store=readStore();const sent=store.releaseWebhookAnnouncements&&typeof store.releaseWebhookAnnouncements==='object'?store.releaseWebhookAnnouncements as Record<string,string>:{};if(sent[config.preferredGuildId]===version)return;const notes=releaseNotesText(releaseNotes)||'Une nouvelle version officielle d’Inazuma Music est disponible.';const response=await fetch(config.releaseWebhookUrl,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'Inazuma Music',embeds:[{color:0xf5b800,title:`⚡ Mise à jour ${version}`,description:notes,thumbnail:{url:'https://raw.githubusercontent.com/NewaaDev/imazuma-music/feature/inazuma-v2/assets/icon.png'},fields:[{name:'Version',value:version,inline:true}],url:'https://github.com/NewaaDev/imazuma-music/releases/latest',footer:{text:'Inazuma Music • Mise à jour officielle'},timestamp:new Date().toISOString()}],components:[{type:1,components:[{type:2,style:5,label:'Télécharger Inazuma Music',url:'https://github.com/NewaaDev/imazuma-music/releases/latest'}]}]})});if(!response.ok)throw new Error(`Webhook Discord refusé (${response.status}).`);writeStore({...store,releaseWebhookAnnouncements:{...sent,[config.preferredGuildId]:version}})}
+type ReleaseWebhookRecord = {version:string;messageId:string;payload:Record<string,unknown>};
+function releaseWebhookPayload(version:string,releaseNotes:unknown){const notes=releaseNotesText(releaseNotes)||'Une nouvelle version officielle d’Inazuma Music est disponible.';return{username:'Inazuma Music',allowed_mentions:{parse:[]},embeds:[{color:0xf5b800,title:`⚡ Mise à jour ${version}`,description:notes,thumbnail:{url:'https://raw.githubusercontent.com/NewaaDev/imazuma-music/feature/inazuma-v2/assets/icon.png'},fields:[{name:'Version',value:version,inline:true}],url:'https://github.com/NewaaDev/imazuma-music/releases/latest',footer:{text:'Inazuma Music • Mise à jour officielle'},timestamp:new Date().toISOString()}],components:[{type:1,components:[{type:2,style:5,label:'Télécharger Inazuma Music',url:'https://github.com/NewaaDev/imazuma-music/releases/latest'}]}]}}
+function releaseWebhookRecords(store:Record<string,unknown>){return store.releaseWebhookAnnouncements&&typeof store.releaseWebhookAnnouncements==='object'?store.releaseWebhookAnnouncements as Record<string,string|ReleaseWebhookRecord>:{};}
+function webhookMessageUrl(webhook:string,messageId:string){const url=new URL(webhook);url.pathname+=`/messages/${messageId}`;return url.href;}
+async function sendReleaseWebhook(webhook:string,payload:Record<string,unknown>){const url=new URL(webhook);url.searchParams.set('wait','true');const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});if(!response.ok)throw new Error(`Webhook Discord refusé (${response.status}).`);const message=await response.json() as {id?:string};if(!/^\d{17,20}$/.test(message.id||''))throw new Error('Discord n’a pas confirmé le message de mise à jour.');return message.id!;}
+function saveReleaseWebhookRecord(guildId:string,record:ReleaseWebhookRecord){const store=readStore();const sent=releaseWebhookRecords(store);writeStore({...store,releaseWebhookAnnouncements:{...sent,[guildId]:record}});}
+async function announceWebhookUpdate(version:string,releaseNotes:unknown){const config=getConfig();if(!config.preferredGuildId||!config.releaseWebhookUrl)return;const store=readStore();const sent=releaseWebhookRecords(store);const previous=sent[config.preferredGuildId];if(typeof previous==='object'&&previous.version===version&&/^\d{17,20}$/.test(previous.messageId)){const existing=await fetch(webhookMessageUrl(config.releaseWebhookUrl,previous.messageId));if(existing.ok)return;if(existing.status!==404)throw new Error(`Vérification du webhook refusée (${existing.status}).`);console.warn('[Inazuma Music] Annonce Discord supprimée : republication automatique.');}else if(previous===version)return;const payload=releaseWebhookPayload(version,releaseNotes);const messageId=await sendReleaseWebhook(config.releaseWebhookUrl,payload);saveReleaseWebhookRecord(config.preferredGuildId,{version,messageId,payload});}
+async function repairStoredWebhookAnnouncement(){if(releaseWebhookCheckRunning)return;releaseWebhookCheckRunning=true;try{const config=getConfig();if(!config.preferredGuildId||!config.releaseWebhookUrl)return;const record=releaseWebhookRecords(readStore())[config.preferredGuildId];if(!record||typeof record==='string'||!/^\d{17,20}$/.test(record.messageId))return;const existing=await fetch(webhookMessageUrl(config.releaseWebhookUrl,record.messageId));if(existing.ok)return;if(existing.status!==404)throw new Error(`Vérification du webhook refusée (${existing.status}).`);console.warn('[Inazuma Music] Annonce Discord disparue : restauration automatique.');const messageId=await sendReleaseWebhook(config.releaseWebhookUrl,record.payload);saveReleaseWebhookRecord(config.preferredGuildId,{...record,messageId});}finally{releaseWebhookCheckRunning=false;}}
 function getConfig(): Config {
   let store = readStore();
   if (store.sessionVersion !== 2) {
@@ -123,7 +132,7 @@ function getConfig(): Config {
     writeStore(store);
   }
   const saved = store.public as Partial<Config> || {};
-  if(saved.presenceState&&(/B[ÊE]TA/i.test(saved.presenceState)||/^Version 2\.(?:0|1(?:\.[1-5])?|2\.[0-8]) • OFFICIEL$/.test(saved.presenceState)))saved.presenceState='Version 2.2.9 • OFFICIEL';
+  if(saved.presenceState&&(/B[ÊE]TA/i.test(saved.presenceState)||/^Version 2\.(?:0|1(?:\.[1-5])?|2\.(?:[0-9])) • OFFICIEL$/.test(saved.presenceState)))saved.presenceState='Version 2.2.10 • OFFICIEL';
   return {
     ...defaults,
     ...saved,
@@ -181,7 +190,7 @@ ipcMain.handle('config:set', (_e, config: Config) => {
   const previousPublic = current.public as Partial<Config> || {};
   const webhooks=webhookMap(current.releaseWebhooks); const guildId=String(publicConfig.preferredGuildId||'');
   if(guildId&&releaseWebhookUrl){if(!validWebhookUrl(releaseWebhookUrl))throw new Error('URL de webhook Discord invalide.');webhooks[guildId]=releaseWebhookUrl.trim()}else if(guildId)delete webhooks[guildId];
-  writeStore({ sessionVersion: 2, public: { ...previousPublic, ...publicConfig, discordClientId: publicConfig.discordClientId || previousPublic.discordClientId || '' }, apiToken: protect(apiToken), youtubeApiKey: protect(youtubeApiKey), releaseWebhooks:protect(JSON.stringify(webhooks)) });
+  writeStore({ ...current, sessionVersion: 2, public: { ...previousPublic, ...publicConfig, discordClientId: publicConfig.discordClientId || previousPublic.discordClientId || '' }, apiToken: protect(apiToken), youtubeApiKey: protect(youtubeApiKey), releaseWebhooks:protect(JSON.stringify(webhooks)) });
   const saved = getConfig();
   void setupRichPresence(saved);
   return saved;
@@ -246,7 +255,7 @@ ipcMain.handle('discord:login', async (_e, clientId: string) => {
     const timeout=setTimeout(()=>done(new Error('La connexion Discord a expiré.')),120_000);
   });
 });
-ipcMain.handle('discord:invite',async(_e,clientId:string)=>{if(!/^\d{17,20}$/.test(clientId))throw new Error('Le bot doit être connecté une première fois.');const url=new URL('https://discord.com/oauth2/authorize');url.search=new URLSearchParams({client_id:clientId,scope:'bot applications.commands',permissions:'3165184'}).toString();await shell.openExternal(url.href)});
+ipcMain.handle('discord:invite',async(_e,clientId:string)=>{if(!/^\d{17,20}$/.test(clientId))throw new Error('Le bot doit être connecté une première fois.');const url=new URL('https://discord.com/oauth2/authorize');url.search=new URLSearchParams({client_id:clientId,scope:'bot applications.commands',permissions:'3230720'}).toString();await shell.openExternal(url.href)});
 ipcMain.handle('bot:start', () => {
   if (botProcess) return { ok: true, message: 'Le bot est déjà lancé.' };
   const c = getConfig(); if (!c.botCommand) throw new Error('Configure la commande de démarrage du bot.');
@@ -275,7 +284,9 @@ app.whenReady().then(() => {
     return;
   }
   configureYouTubeRequests();createWindow();setupUpdates();registerMediaShortcuts();void setupRichPresence(getConfig());
+  setTimeout(()=>void repairStoredWebhookAnnouncement().catch(error=>console.error('[Inazuma Music] Surveillance annonce:',error instanceof Error?error.message:String(error))),15_000);
+  releaseWebhookMonitor=setInterval(()=>void repairStoredWebhookAnnouncement().catch(error=>console.error('[Inazuma Music] Surveillance annonce:',error instanceof Error?error.message:String(error))),120_000);
 });
 app.on('window-all-closed', () => { discordRpc?.destroy().catch(() => {}); if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => { if(releaseWebhookMonitor)clearInterval(releaseWebhookMonitor);globalShortcut.unregisterAll(); });

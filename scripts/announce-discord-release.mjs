@@ -135,8 +135,31 @@ export async function announceRelease({
     if (marker) {
       requireValue(marker.state === 'uploaded' && marker.size > 0,
         'Marqueur d’annonce incomplet ; vérifier Discord avant toute reprise.');
-      log(`Inazuma Music ${tag} : annonce déjà enregistrée, aucun doublon envoyé.`);
-      return { status: 'already-announced', tag };
+      if (SNOWFLAKE.test(marker.label || '')) {
+        const messageUrl = new URL(webhookUrl.href);
+        messageUrl.pathname += `/messages/${marker.label}`;
+        const existing = await request(messageUrl.href, { method: 'GET' }, 'Vérification du message Discord');
+        if (existing.ok) {
+          const message = await json(existing, 'Vérification du message Discord');
+          requireValue(message?.id === marker.label, 'Réponse Discord inattendue ; aucune nouvelle annonce envoyée.');
+          log(`Inazuma Music ${tag} : annonce toujours présente, aucun doublon envoyé.`);
+          return { status: 'already-announced', tag };
+        }
+        requireValue(existing.status === 404, `Vérification Discord refusée (HTTP ${existing.status}). Aucune nouvelle annonce envoyée.`);
+        const cleanup = await request(`${API}/releases/assets/${marker.id}`, { method: 'DELETE', headers: githubHeaders }, 'Suppression du marqueur périmé');
+        requireValue(cleanup.status === 204, 'Annonce absente mais marqueur impossible à réparer.');
+        release.assets = release.assets.filter(asset => asset.id !== marker.id);
+        const oldReservation = release.assets.find(asset => asset.name === RESERVATION);
+        if (oldReservation) {
+          const unlock = await request(`${API}/releases/assets/${oldReservation.id}`, { method: 'DELETE', headers: githubHeaders }, 'Réinitialisation de la réservation');
+          requireValue(unlock.status === 204, 'Annonce absente mais verrou de republication impossible à réparer.');
+          release.assets = release.assets.filter(asset => asset.id !== oldReservation.id);
+        }
+        log(`Inazuma Music ${tag} : annonce supprimée détectée, republication sécurisée.`);
+      } else {
+        log(`Inazuma Music ${tag} : ancien marqueur sans identifiant, aucun doublon envoyé.`);
+        return { status: 'already-announced', tag };
+      }
     }
     requireValue(!release.assets.some(asset => asset.name === RESERVATION),
       'Annonce déjà commencée sans confirmation finale. Vérifier Discord et la réservation avant toute reprise.');
@@ -156,8 +179,11 @@ export async function announceRelease({
   requireValue(identity && identity.type === 1 && SNOWFLAKE.test(identity.channel_id)
     && identity.id === webhookUrl.pathname.split('/').at(-2), 'Identité ou salon du webhook Discord invalide.');
 
-  async function uploadMarker(name, value) {
-    const response = await request(`${uploadBase}?name=${encodeURIComponent(name)}`, {
+  async function uploadMarker(name, value, label = '') {
+    const markerUrl = new URL(uploadBase);
+    markerUrl.searchParams.set('name', name);
+    if (label) markerUrl.searchParams.set('label', label);
+    const response = await request(markerUrl.href, {
       method: 'POST',
       headers: { ...githubHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify(value),
@@ -200,7 +226,7 @@ export async function announceRelease({
   requireValue(message && SNOWFLAKE.test(message.id) && message.channel_id === identity.channel_id
     && message.webhook_id === identity.id, 'Message Discord non confirmé. Réservation conservée ; vérifier avant de relancer.');
   const marker = { tag, messageId: message.id, channelId: message.channel_id, time: now() };
-  await uploadMarker(MARKER, marker);
+  await uploadMarker(MARKER, marker, message.id);
   log(`Inazuma Music ${tag} : annonce confirmée dans le salon ${marker.channelId}, message ${marker.messageId}.`);
   return { status: 'announced', ...marker };
 }

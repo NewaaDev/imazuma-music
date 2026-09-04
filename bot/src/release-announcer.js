@@ -28,22 +28,47 @@ export function releaseAnnouncement(release) {
   };
 }
 
+function savedAnnouncement(state, channelId) {
+  if (state?.announcements?.[channelId]) return state.announcements[channelId];
+  return state?.channelId === channelId ? state : null;
+}
+
+function messageMissing(error) {
+  return error?.code === 10008 || error?.status === 404 || error?.httpStatus === 404;
+}
+
+export async function existingReleaseMessage(channel, state, release) {
+  if (!state?.messageId || state.version !== release?.version || state.channelId !== channel.id) return null;
+  try {
+    return await channel.messages.fetch(state.messageId);
+  } catch (error) {
+    if (messageMissing(error)) return null;
+    throw error;
+  }
+}
+
 export async function announceRelease(client, { channelId, enabled = true } = {}) {
   if (!enabled || !channelId) return { sent: false, reason: 'disabled' };
   const release = readJson(releaseFile);
   const payload = releaseAnnouncement(release);
   if (!payload) return { sent: false, reason: 'invalid-release' };
   const state = readJson(stateFile, {});
-  if (state?.version === release.version && state?.channelId === channelId) return { sent: false, reason: 'already-sent' };
   const channel = await client.channels.fetch(channelId);
   if (!channel?.isTextBased?.() || !channel.isSendable?.()) throw new Error(`Le salon ${channelId} n'est pas un salon texte accessible.`);
   const permissions = channel.permissionsFor?.(client.user);
-  if (permissions && (!permissions.has(PermissionFlagsBits.ViewChannel) || !permissions.has(PermissionFlagsBits.SendMessages) || !permissions.has(PermissionFlagsBits.EmbedLinks))) {
-    throw new Error(`Permissions insuffisantes dans le salon ${channelId} (Voir, Envoyer, Intégrer des liens).`);
+  if (permissions && (!permissions.has(PermissionFlagsBits.ViewChannel) || !permissions.has(PermissionFlagsBits.SendMessages) || !permissions.has(PermissionFlagsBits.EmbedLinks) || !permissions.has(PermissionFlagsBits.ReadMessageHistory))) {
+    throw new Error(`Permissions insuffisantes dans le salon ${channelId} (Voir, Envoyer, Historique, Intégrer des liens).`);
+  }
+  const tracked = savedAnnouncement(state, channelId);
+  if (await existingReleaseMessage(channel, tracked, release)) return { sent: false, reason: 'already-sent' };
+  if (tracked?.messageId && tracked?.version === release.version) {
+    console.warn(`[Inazuma Music] L'annonce ${tracked.messageId} a disparu du salon ${channelId}; republication.`);
   }
   const message = await channel.send(payload);
   fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-  fs.writeFileSync(stateFile, JSON.stringify({ version: release.version, channelId, messageId: message.id, sentAt: new Date().toISOString() }, null, 2));
+  const entry = { version: release.version, channelId, messageId: message.id, sentAt: new Date().toISOString() };
+  const announcements = state?.announcements && typeof state.announcements === 'object' ? state.announcements : {};
+  fs.writeFileSync(stateFile, JSON.stringify({ announcements: { ...announcements, [channelId]: entry } }, null, 2));
   return { sent: true, version: release.version, messageId: message.id };
 }
 

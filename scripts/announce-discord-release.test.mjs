@@ -46,21 +46,24 @@ function fixture(overrides = {}) {
     if (url === `${API}/releases/tags/${TAG}` && method === 'GET') return response(state.release);
     if (url.startsWith(`${API}/releases/42/assets?`) && method === 'GET') return response(state.assets);
     if (url.startsWith(`${UPLOAD}?`) && method === 'POST') {
-      const name = new URL(url).searchParams.get('name');
+      const parsedUrl = new URL(url);
+      const name = parsedUrl.searchParams.get('name');
       if (state.markerFailure === name) return response({ secret: WEBHOOK }, 503);
       if (state.assets.some(asset => asset.name === name)) return response({}, 422);
-      const asset = { id: nextAssetId++, name, state: 'uploaded', size: options.body.length };
+      const asset = { id: nextAssetId++, name, label: parsedUrl.searchParams.get('label'), state: 'uploaded', size: options.body.length };
       state.assets.push(asset);
       state.markerBodies[name] = JSON.parse(options.body);
       return response(asset, 201);
     }
     if (url.startsWith(`${API}/releases/assets/`) && method === 'DELETE') {
       const id = Number(url.split('/').at(-1));
+      const removed = state.assets.find(asset => asset.id === id);
       state.assets = state.assets.filter(asset => asset.id !== id);
-      delete state.markerBodies[RESERVATION];
+      if (removed) delete state.markerBodies[removed.name];
       return response(null, 204);
     }
     if (url === WEBHOOK && method === 'GET') return response(state.identity);
+    if (url === `${WEBHOOK}/messages/${MESSAGE_ID}` && method === 'GET') return response(state.message, state.messageStatus || 200);
     if (url === `${WEBHOOK}?wait=true` && method === 'POST') {
       state.posts++;
       state.postedBody = options.body;
@@ -98,6 +101,7 @@ test('success confirms Discord IDs and persists only nonsecret markers', async (
   assert.deepEqual(state.markerBodies[MARKER], {
     tag: TAG, messageId: MESSAGE_ID, channelId: CHANNEL_ID, time: '2026-08-30T01:00:00Z',
   });
+  assert.equal(state.assets.find(asset => asset.name === MARKER).label, MESSAGE_ID);
   assert.deepEqual(Object.keys(state.markerBodies[RESERVATION]).sort(), ['tag', 'time']);
   for (const secret of [WEBHOOK, TOKEN]) {
     assert.ok(!JSON.stringify(state.markerBodies).includes(secret));
@@ -108,13 +112,25 @@ test('success confirms Discord IDs and persists only nonsecret markers', async (
   assert.ok(reservationIndex < discordIndex, 'reserve before sending');
 });
 
+test('scheduled rerun verifies the Discord message and republishes it only after a confirmed deletion', async () => {
+  const { state, run } = fixture();
+  await run();
+  assert.equal((await run()).status, 'already-announced');
+  assert.equal(state.posts, 1);
+  state.messageStatus = 404;
+  await run();
+  assert.equal(state.posts, 2);
+  assert.equal(state.assets.filter(asset => asset.name === MARKER).length, 1);
+});
+
 test('rerun after success skips without another Discord request', async () => {
   const { state, run } = fixture();
   await run();
   const requestsBefore = state.requests.length;
   assert.equal((await run()).status, 'already-announced');
   assert.equal(state.posts, 1);
-  assert.ok(state.requests.slice(requestsBefore).every(item => !item.url.startsWith(WEBHOOK)));
+  assert.equal(state.requests.slice(requestsBefore).filter(item => item.url === `${WEBHOOK}?wait=true`).length, 0);
+  assert.ok(state.requests.slice(requestsBefore).some(item => item.url === `${WEBHOOK}/messages/${MESSAGE_ID}`));
 });
 
 test('long notes are attached intact as text with a compact embed', async () => {

@@ -3,6 +3,8 @@ name: Announce release on Discord
 on:
   release:
     types: [published]
+  schedule:
+    - cron: '17,47 * * * *'
   workflow_dispatch:
     inputs:
       tag:
@@ -12,7 +14,7 @@ on:
   workflow_call:
     inputs:
       tag:
-        required: true
+        required: false
         type: string
     secrets:
       DISCORD_RELEASE_WEBHOOK:
@@ -22,7 +24,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: discord-release-${{ inputs.tag || github.event.release.tag_name }}
+  group: discord-release-${{ inputs.tag || github.event.release.tag_name || 'latest' }}
   cancel-in-progress: false
 
 jobs:
@@ -40,11 +42,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Resolve the official release to monitor
+        id: release
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$REQUESTED_TAG"
+          if [ -z "$tag" ]; then tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"; fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then exit 1; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Test announcement safeguards (no secrets)
         run: node --test scripts/announce-discord-release.test.mjs
       - name: Announce the complete published version
         run: node scripts/announce-discord-release.mjs
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISCORD_RELEASE_WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}

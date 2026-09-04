@@ -37,6 +37,8 @@ class GuildPlayer extends EventEmitter {
     this.recentTrackIds = [];
     this.seekOffset = 0;
     this.playbackAttempt = 0;
+    this.nowPlayingMessageId = null;
+    this.nowPlayingRepairTrackId = null;
     this.player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
     this.player.on(AudioPlayerStatus.Idle, () => this.#onIdle());
     this.player.on('error', (error) => this.#onPlayerError(error));
@@ -189,8 +191,24 @@ class GuildPlayer extends EventEmitter {
         { name: 'Durée', value: duration(track.duration), inline: true },
       ).setFooter({ text: `Volume ${this.volume}% • Boucle ${this.loop}` });
     if (track.thumbnail) embed.setThumbnail(track.thumbnail);
-    try { await this.textChannel.send({ content: '▶️ Lecture en cours', embeds: [embed] }); }
+    try {
+      const message = await this.textChannel.send({ content: '▶️ Lecture en cours', embeds: [embed] });
+      this.nowPlayingMessageId = message.id;
+    }
     catch (error) { console.error(`[${this.guildId}] Impossible d’envoyer l’embed:`, error.message); }
+  }
+
+  handleDeletedMessage(message) {
+    if (!message?.id || message.id !== this.nowPlayingMessageId) return false;
+    this.nowPlayingMessageId = null;
+    console.warn(`[${this.guildId}] Le message « Lecture en cours » ${message.id} a été supprimé dans ${message.channelId}.`);
+    if (this.current && this.nowPlayingRepairTrackId !== this.current.id) {
+      this.nowPlayingRepairTrackId = this.current.id;
+      setTimeout(() => {
+        if (this.current?.id === this.nowPlayingRepairTrackId) void this.#announce(this.current);
+      }, 1_500);
+    }
+    return true;
   }
 
   #onIdle() {
@@ -278,6 +296,7 @@ export class MusicManager {
   rememberTextChannel(guildId, channel) { if (guildId && channel?.isTextBased?.()) this.lastTextChannels.set(guildId, channel); }
   getLastTextChannel(guildId) { return this.lastTextChannels.get(guildId) || null; }
   get(guildId) { return this.guilds.get(guildId); }
+  handleDeletedMessage(message) { return this.get(message?.guildId)?.handleDeletedMessage(message) || false; }
   getOrCreate(guildId) {
     let guildPlayer = this.get(guildId);
     if (!guildPlayer) {
