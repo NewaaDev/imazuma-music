@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existingReleaseMessage, releaseAnnouncement } from '../src/release-announcer.js';
+import { existingReleaseMessage, releaseAnnouncement, restoreDeletedReleaseMessage } from '../src/release-announcer.js';
 
 test('construit une annonce Inazuma avec la version et les changements', () => {
   const payload = releaseAnnouncement({ version: '2.2.2', changes: ['Correction écran noir', 'Import YouTube'], downloadUrl: 'https://example.com/release' });
@@ -20,4 +20,9 @@ test('conserve une annonce encore présente et répare seulement une annonce ré
   assert.equal(await existingReleaseMessage({ id: '123', messages: { fetch: async () => message } }, state, release), message);
   assert.equal(await existingReleaseMessage({ id: '123', messages: { fetch: async () => { const error = new Error('Unknown Message'); error.code = 10008; throw error; } } }, state, release), null);
   await assert.rejects(existingReleaseMessage({ id: '123', messages: { fetch: async () => { throw new Error('Discord indisponible'); } } }, state, release), /Discord indisponible/);
+});
+
+test('ignore une suppression qui ne concerne pas une annonce suivie', async () => {
+  const result = await restoreDeletedReleaseMessage({}, { id: '999', channelId: '123' });
+  assert.deepEqual(result, { restored: false, reason: 'untracked' });
 });

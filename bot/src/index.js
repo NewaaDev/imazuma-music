@@ -5,7 +5,7 @@ import { MusicManager } from './music-manager.js';
 import { createDesktopBridge } from './desktop-bridge.js';
 import { createRemoteRelay } from './remote-relay.js';
 import { restoreSessions, saveSessions } from './session-store.js';
-import { announceRelease, selectedReleaseChannels } from './release-announcer.js';
+import { announceRelease, restoreDeletedReleaseMessage, selectedReleaseChannels } from './release-announcer.js';
 
 assertRuntimeConfig();
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates, GatewayIntentBits.GuildMessages] });
@@ -35,7 +35,12 @@ client.once(Events.ClientReady, (readyClient) => {
 });
 client.on(Events.InteractionCreate, (interaction) => handleInteraction(interaction, music));
 client.on(Events.VoiceStateUpdate, (oldState, newState) => desktopBridge?.handleVoiceStateUpdate(oldState, newState));
-client.on(Events.MessageDelete, (message) => music.handleDeletedMessage(message));
+client.on(Events.MessageDelete, (message) => {
+  music.handleDeletedMessage(message);
+  void restoreDeletedReleaseMessage(client, message, { enabled: config.releaseAnnouncements })
+    .then((result) => { if (result.restored) console.log(`[Inazuma Music] Annonce restaurée immédiatement dans ${message.channelId}.`); })
+    .catch((error) => console.error('[Inazuma Music] Restauration immédiate de l’annonce:', error.message));
+});
 client.on(Events.Error, (error) => console.error('Erreur Discord:', error));
 const persistenceTimer = setInterval(() => {
   try { saveSessions(music); } catch (error) { console.error('[Inazuma Music] Sauvegarde:', error.message); }

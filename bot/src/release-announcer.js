@@ -72,6 +72,16 @@ export async function announceRelease(client, { channelId, enabled = true } = {}
   return { sent: true, version: release.version, messageId: message.id };
 }
 
+export async function restoreDeletedReleaseMessage(client, message, { enabled = true } = {}) {
+  if (!enabled || !message?.id || !message?.channelId) return { restored: false, reason: 'ignored' };
+  const state = readJson(stateFile, {});
+  const tracked = savedAnnouncement(state, message.channelId);
+  if (!tracked || tracked.messageId !== message.id) return { restored: false, reason: 'untracked' };
+  console.warn(`[Inazuma Music] Suppression détectée pour l'annonce ${message.id} dans ${message.channelId}; restauration immédiate.`);
+  const result = await announceRelease(client, { channelId: message.channelId, enabled });
+  return { restored: Boolean(result.sent), ...result };
+}
+
 export function selectedReleaseChannels(fallbackGuildId = '', fallbackChannelId = '') {
   const saved = readJson(selectionFile, {});
   const channels = saved?.channels && typeof saved.channels === 'object' ? saved.channels : {};
