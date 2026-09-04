@@ -1,15 +1,29 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+function canRun(executable) {
+  try {
+    execFileSync(fileURLToPath(executable), ['--version'], {
+      stdio: 'ignore',
+      timeout: 15_000,
+      windowsHide: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function ensureYtDlp() {
   if (process.env.YTDLP_PATH) return;
 
   const executableName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
   const bundledExecutable = new URL(`./bin/${executableName}`, import.meta.url);
-  if (existsSync(bundledExecutable)) {
+  if (existsSync(bundledExecutable) && canRun(bundledExecutable)) {
     if (process.platform !== 'win32') chmodSync(bundledExecutable, 0o755);
-    process.env.YTDLP_PATH = bundledExecutable.pathname;
+    process.env.YTDLP_PATH = fileURLToPath(bundledExecutable);
     return;
   }
 
@@ -20,18 +34,22 @@ async function ensureYtDlp() {
 
   const downloadUrl = process.platform === 'darwin'
     ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos'
-    : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
+    : existsSync('/etc/alpine-release')
+      ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_musllinux'
+      : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
   const temporaryExecutable = new URL(`./bin/${executableName}.download`, import.meta.url);
 
   console.log('[Inazuma Music] Installation locale de yt-dlp…');
   mkdirSync(new URL('./bin/', import.meta.url), { recursive: true });
+  rmSync(bundledExecutable, { force: true });
   try {
     const response = await fetch(downloadUrl, { redirect: 'follow' });
     if (!response.ok) throw new Error(`téléchargement HTTP ${response.status}`);
     writeFileSync(temporaryExecutable, Buffer.from(await response.arrayBuffer()));
     chmodSync(temporaryExecutable, 0o755);
     renameSync(temporaryExecutable, bundledExecutable);
-    process.env.YTDLP_PATH = bundledExecutable.pathname;
+    if (!canRun(bundledExecutable)) throw new Error('le binaire téléchargé est incompatible avec ce conteneur');
+    process.env.YTDLP_PATH = fileURLToPath(bundledExecutable);
     console.log('[Inazuma Music] yt-dlp est prêt.');
   } catch (error) {
     rmSync(temporaryExecutable, { force: true });
