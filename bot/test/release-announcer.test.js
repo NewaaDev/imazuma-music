@@ -26,3 +26,10 @@ test('ignore une suppression qui ne concerne pas une annonce suivie', async () =
   const result = await restoreDeletedReleaseMessage({}, { id: '999', channelId: '123' });
   assert.deepEqual(result, { restored: false, reason: 'untracked' });
 });
+
+test('bloque une boucle de republication après une première restauration', async () => {
+  const source = await import('node:fs');
+  const implementation = source.readFileSync(new URL('../src/release-announcer.js', import.meta.url), 'utf8');
+  assert.match(implementation, /external-deletion-loop/);
+  assert.match(implementation, /restoreAttempts/);
+});

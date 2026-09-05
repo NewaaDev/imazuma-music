@@ -1,8 +1,9 @@
 {
-  "version": "2.2.11",
-  "title": "Inazuma Music 2.2.11",
+  "version": "2.2.12",
+  "title": "Inazuma Music 2.2.12",
   "changes": [
-    "Les annonces Discord sont maintenant restaurées immédiatement dès leur suppression",
+    "Une annonce Discord supprimée est restaurée une fois immédiatement sans créer de boucle de spam",
+    "Le bot tente d'identifier le responsable dans le journal d'audit Discord",
     "Les annonces de mise à jour sont désormais surveillées et automatiquement restaurées après une suppression confirmée par Discord",
     "Le suivi des annonces est séparé par serveur et par salon afin d’éviter les collisions et les faux statuts déjà envoyé",
     "Le webhook mémorise l’identifiant du message et vérifie sa présence sans exposer son URL secrète",

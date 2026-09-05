@@ -47,7 +47,7 @@ export async function existingReleaseMessage(channel, state, release) {
   }
 }
 
-export async function announceRelease(client, { channelId, enabled = true } = {}) {
+export async function announceRelease(client, { channelId, enabled = true, restoration = false } = {}) {
   if (!enabled || !channelId) return { sent: false, reason: 'disabled' };
   const release = readJson(releaseFile);
   const payload = releaseAnnouncement(release);
@@ -62,11 +62,17 @@ export async function announceRelease(client, { channelId, enabled = true } = {}
   const tracked = savedAnnouncement(state, channelId);
   if (await existingReleaseMessage(channel, tracked, release)) return { sent: false, reason: 'already-sent' };
   if (tracked?.messageId && tracked?.version === release.version) {
+    if (Number(tracked.restoreAttempts || 0) >= 1) {
+      return { sent: false, reason: 'external-deletion-loop', messageId: tracked.messageId };
+    }
     console.warn(`[Inazuma Music] L'annonce ${tracked.messageId} a disparu du salon ${channelId}; republication.`);
   }
   const message = await channel.send(payload);
   fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-  const entry = { version: release.version, channelId, messageId: message.id, sentAt: new Date().toISOString() };
+  const restoreAttempts = tracked?.version === release.version
+    ? Number(tracked.restoreAttempts || 0) + (restoration ? 1 : 0)
+    : 0;
+  const entry = { version: release.version, channelId, messageId: message.id, sentAt: new Date().toISOString(), restoreAttempts };
   const announcements = state?.announcements && typeof state.announcements === 'object' ? state.announcements : {};
   fs.writeFileSync(stateFile, JSON.stringify({ announcements: { ...announcements, [channelId]: entry } }, null, 2));
   return { sent: true, version: release.version, messageId: message.id };
@@ -78,7 +84,7 @@ export async function restoreDeletedReleaseMessage(client, message, { enabled = 
   const tracked = savedAnnouncement(state, message.channelId);
   if (!tracked || tracked.messageId !== message.id) return { restored: false, reason: 'untracked' };
   console.warn(`[Inazuma Music] Suppression détectée pour l'annonce ${message.id} dans ${message.channelId}; restauration immédiate.`);
-  const result = await announceRelease(client, { channelId: message.channelId, enabled });
+  const result = await announceRelease(client, { channelId: message.channelId, enabled, restoration: true });
   return { restored: Boolean(result.sent), ...result };
 }
 
