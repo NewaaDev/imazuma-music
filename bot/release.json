@@ -1,16 +1,10 @@
 {
-  "version": "2.2.12",
-  "title": "Inazuma Music 2.2.12",
+  "version": "2.2.13",
+  "title": "Inazuma Music 2.2.13",
   "changes": [
-    "Une annonce Discord supprimée est restaurée une fois immédiatement sans créer de boucle de spam",
-    "Le bot tente d'identifier le responsable dans le journal d'audit Discord",
-    "Les annonces de mise à jour sont désormais surveillées et automatiquement restaurées après une suppression confirmée par Discord",
-    "Le suivi des annonces est séparé par serveur et par salon afin d’éviter les collisions et les faux statuts déjà envoyé",
-    "Le webhook mémorise l’identifiant du message et vérifie sa présence sans exposer son URL secrète",
-    "L’invitation du bot inclut désormais la lecture de l’historique nécessaire au contrôle des annonces",
-    "Le message Lecture en cours est restauré une fois s’il disparaît pendant la musique, avec un journal de diagnostic explicite",
-    "Une vérification GitHub planifiée contrôle les annonces deux fois par heure et évite strictement les doublons",
-    "La configuration locale conserve maintenant l’état des annonces lors de chaque sauvegarde des paramètres"
+    "Réparation de l’extraction YouTube sur OnePanel après l’erreur Cryptodome ARC4",
+    "Utilisation prioritaire de l’exécutable officiel Python sans extraction PyInstaller fragile",
+    "Téléchargement atomique et vérification SHA-256 officielle de yt-dlp avant chaque remplacement"
   ],
   "downloadUrl": "https://github.com/NewaaDev/imazuma-music/releases/latest"
 }

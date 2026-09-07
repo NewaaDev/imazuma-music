@@ -16,36 +16,75 @@ function canRun(executable) {
   }
 }
 
-async function ensureYtDlp() {
-  if (process.env.YTDLP_PATH) return;
+function hasPython3() {
+  try {
+    execFileSync('python3', ['--version'], { stdio: 'ignore', timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
+function sha256(file) {
+  return createHash('sha256').update(readFileSync(file)).digest('hex');
+}
+
+function checksumFor(checksums, assetName) {
+  const line = checksums.split(/\r?\n/).find((entry) => entry.trim().endsWith(`  ${assetName}`));
+  const digest = line?.trim().split(/\s+/)[0]?.toLowerCase();
+  return /^[a-f0-9]{64}$/.test(digest || '') ? digest : '';
+}
+
+async function ensureYtDlp() {
   const executableName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
   const bundledExecutable = new URL(`./bin/${executableName}`, import.meta.url);
-  if (existsSync(bundledExecutable) && canRun(bundledExecutable)) {
-    if (process.platform !== 'win32') chmodSync(bundledExecutable, 0o755);
-    process.env.YTDLP_PATH = fileURLToPath(bundledExecutable);
+
+  // L'installation Windows est gérée par start-local.ps1 ou YTDLP_PATH.
+  if (process.platform === 'win32') {
+    if (process.env.YTDLP_PATH) return;
+    if (existsSync(bundledExecutable) && canRun(bundledExecutable)) {
+      process.env.YTDLP_PATH = fileURLToPath(bundledExecutable);
+    }
     return;
   }
 
-  // Windows utilise normalement start-local.ps1. Sur l'hébergement Linux,
-  // yt-dlp n'est pas fourni par OnePanel : on l'installe localement au premier
-  // démarrage afin que le bot ne dépende pas du PATH système.
-  if (process.platform === 'win32') return;
+  // Le binaire Linux autonome est une archive PyInstaller. Certains conteneurs
+  // OnePanel ont échoué pendant sa décompression (Cryptodome/_ARC4.abi3.so).
+  // Si Python 3 est disponible, l'exécutable zipimport officiel évite totalement
+  // cette extraction native. Sinon on garde le binaire adapté au conteneur.
+  const assetName = hasPython3()
+    ? 'yt-dlp'
+    : process.platform === 'darwin'
+      ? 'yt-dlp_macos'
+      : existsSync('/etc/alpine-release')
+        ? 'yt-dlp_musllinux'
+        : 'yt-dlp_linux';
+  const downloadUrl = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${assetName}`;
+  const checksumsUrl = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/SHA2-256SUMS';
+  const temporaryExecutable = new URL(`./bin/${executableName}.download-${process.pid}-${Date.now()}`, import.meta.url);
 
-  const downloadUrl = process.platform === 'darwin'
-    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos'
-    : existsSync('/etc/alpine-release')
-      ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_musllinux'
-      : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
-  const temporaryExecutable = new URL(`./bin/${executableName}.download`, import.meta.url);
-
-  console.log('[Inazuma Music] Installation locale de yt-dlp…');
   mkdirSync(new URL('./bin/', import.meta.url), { recursive: true });
-  rmSync(bundledExecutable, { force: true });
   try {
+    const checksumResponse = await fetch(checksumsUrl, { redirect: 'follow' });
+    if (!checksumResponse.ok) throw new Error(`sommes de contrôle HTTP ${checksumResponse.status}`);
+    const expectedHash = checksumFor(await checksumResponse.text(), assetName);
+    if (!expectedHash) throw new Error(`somme SHA-256 absente pour ${assetName}`);
+
+    if (existsSync(bundledExecutable) && sha256(bundledExecutable) === expectedHash && canRun(bundledExecutable)) {
+      chmodSync(bundledExecutable, 0o755);
+      process.env.YTDLP_PATH = fileURLToPath(bundledExecutable);
+      console.log(`[Inazuma Music] yt-dlp vérifié (${assetName}).`);
+      return;
+    }
+
+    console.log(`[Inazuma Music] Installation vérifiée de ${assetName}…`);
     const response = await fetch(downloadUrl, { redirect: 'follow' });
     if (!response.ok) throw new Error(`téléchargement HTTP ${response.status}`);
-    writeFileSync(temporaryExecutable, Buffer.from(await response.arrayBuffer()));
+    const binary = Buffer.from(await response.arrayBuffer());
+    const actualHash = createHash('sha256').update(binary).digest('hex');
+    if (actualHash !== expectedHash) throw new Error('la somme SHA-256 du téléchargement est invalide');
+
+    writeFileSync(temporaryExecutable, binary);
     chmodSync(temporaryExecutable, 0o755);
     renameSync(temporaryExecutable, bundledExecutable);
     if (!canRun(bundledExecutable)) throw new Error('le binaire téléchargé est incompatible avec ce conteneur');
