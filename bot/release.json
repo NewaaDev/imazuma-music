@@ -1,10 +1,10 @@
 {
-  "version": "2.2.13",
-  "title": "Inazuma Music 2.2.13",
+  "version": "2.2.14",
+  "title": "Inazuma Music 2.2.14",
   "changes": [
-    "Réparation de l’extraction YouTube sur OnePanel après l’erreur Cryptodome ARC4",
-    "Utilisation prioritaire de l’exécutable officiel Python sans extraction PyInstaller fragile",
-    "Téléchargement atomique et vérification SHA-256 officielle de yt-dlp avant chaque remplacement"
+    "Réparation définitive des erreurs aléatoires Cryptodome ARC4 et curl_cffi sur OnePanel",
+    "Extraction de yt-dlp déplacée hors du tmpfs limité vers le disque persistant du serveur",
+    "Vérification SHA-256 officielle conservée avant chaque remplacement de yt-dlp"
   ],
   "downloadUrl": "https://github.com/NewaaDev/imazuma-music/releases/latest"
 }

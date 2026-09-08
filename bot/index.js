@@ -48,6 +48,17 @@ async function ensureYtDlp() {
     return;
   }
 
+  // PyInstaller extrait ses bibliothèques natives dans /tmp à chaque commande.
+  // Le tmpfs limité de OnePanel sature quand plusieurs recherches/lectures se
+  // chevauchent, puis zlib échoue sur un fichier aléatoire (ARC4, curl_cffi…).
+  // Utiliser le disque persistant du serveur supprime cette limite temporaire.
+  const extractionDirectory = new URL('./.cache/yt-dlp-extraction/', import.meta.url);
+  mkdirSync(extractionDirectory, { recursive: true });
+  process.env.TMPDIR = fileURLToPath(extractionDirectory);
+  process.env.TEMP = process.env.TMPDIR;
+  process.env.TMP = process.env.TMPDIR;
+  console.log(`[Inazuma Music] Extraction yt-dlp isolée dans ${process.env.TMPDIR}.`);
+
   // Le binaire Linux autonome est une archive PyInstaller. Certains conteneurs
   // OnePanel ont échoué pendant sa décompression (Cryptodome/_ARC4.abi3.so).
   // Si Python 3 est disponible, l'exécutable zipimport officiel évite totalement
